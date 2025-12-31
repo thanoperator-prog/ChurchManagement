@@ -426,26 +426,193 @@
             );
         };
 
-        // --- DASHBOARD (REVERTED TO TURN 11 STATE) ---
-        const Dashboard = ({ changeView, members, finances, prayers }) => {
+        const Dashboard = ({ changeView, members, finances, prayers, infoDB, events, announcementsDB, user }) => {
+            const [localInfo, setLocalInfo] = useState(INITIAL_INFO);
+            const [countdown, setCountdown] = useState(null);
+            const [showAnnounceModal, setShowAnnounceModal] = useState(false);
+            const [newAnnouncement, setNewAnnouncement] = useState({ title: '', content: '' });
+            const [confirm, setConfirm] = useState({ isOpen: false, msg: '', action: null });
+
+            const announcements = useMemo(() => (announcementsDB.data || []).sort((a, b) => new Date(b.date) - new Date(a.date)), [announcementsDB.data]);
+            const canPostAnnouncement = user.role === 'admin' || (user.positions && user.positions.includes('Pastor'));
+
+            useEffect(() => { const doc = infoDB.data.find(d => d.id === 'main'); if (doc) setLocalInfo(doc); }, [infoDB.data]);
+
+            // UPDATED VERSE LOGIC: Deterministic Daily Verse
+            const verse = useMemo(() => {
+                const VERSES = [
+                    { text: "For I know the plans I have for you, declares the LORD, plans for welfare and not for evil, to give you a future and a hope.", ref: "Jeremiah 29:11" },
+                    { text: "I can do all things through him who strengthens me.", ref: "Philippians 4:13" },
+                    { text: "Trust in the LORD with all your heart, and do not lean on your own understanding.", ref: "Proverbs 3:5" },
+                    { text: "The LORD is my shepherd; I shall not want.", ref: "Psalm 23:1" },
+                    { text: "But they who wait for the LORD shall renew their strength; they shall mount up with wings like eagles...", ref: "Isaiah 40:31" },
+                    { text: "Be strong and courageous. Do not be frightened, and do not be dismayed, for the LORD your God is with you wherever you go.", ref: "Joshua 1:9" },
+                    { text: "And we know that for those who love God all things work together for good...", ref: "Romans 8:28" },
+                    { text: "The LORD is my light and my salvation; whom shall I fear?", ref: "Psalm 27:1" },
+                    { text: "Cast all your anxiety on him because he cares for you.", ref: "1 Peter 5:7" },
+                    { text: "This is the day that the LORD has made; let us rejoice and be glad in it.", ref: "Psalm 118:24" }
+                ];
+                const now = new Date();
+                const start = new Date(now.getFullYear(), 0, 0);
+                const diff = now - start;
+                const oneDay = 1000 * 60 * 60 * 24;
+                const day = Math.floor(diff / oneDay);
+                return VERSES[day % VERSES.length];
+            }, []);
+
+            useEffect(() => {
+                const calculateNext = () => {
+                    const now = new Date();
+                    let nextTime = null;
+                    let title = "";
+                    const serviceTimes = Array.isArray(localInfo.serviceTimes) ? localInfo.serviceTimes : [];
+                    serviceTimes.forEach(st => {
+                        const dayIndex = DAYS_OF_WEEK.indexOf(st.day);
+                        if (dayIndex === -1) return;
+                        const [hours, minutes] = st.time.split(':').map(Number);
+                        let date = new Date(now);
+                        date.setDate(now.getDate() + ((dayIndex + 7 - now.getDay()) % 7));
+                        date.setHours(hours, minutes, 0, 0);
+                        if (date <= now) date.setDate(date.getDate() + 7);
+                        if (!nextTime || date < nextTime) { nextTime = date; title = `${st.day} Service`; }
+                    });
+                    events.forEach(ev => {
+                        if (ev.type === 'Meeting') return;
+                        const evDate = new Date(`${ev.startDate}T${ev.time}`);
+                        if (evDate > now) { if (!nextTime || evDate < nextTime) { nextTime = evDate; title = ev.title; } }
+                    });
+                    if (nextTime) {
+                        const diff = nextTime - now;
+                        setCountdown({ title, days: Math.floor(diff / 86400000), hours: Math.floor((diff % 86400000) / 3600000), mins: Math.floor((diff % 3600000) / 60000) });
+                    } else setCountdown(null);
+                };
+                calculateNext();
+                const timer = setInterval(calculateNext, 60000);
+                return () => clearInterval(timer);
+            }, [localInfo, events]);
+
+            const handleAddAnnouncement = (e) => { e.preventDefault(); setConfirm({ isOpen: true, msg: 'Post announcement?', action: () => announcementsDB.add({ ...newAnnouncement, date: new Date().toISOString(), author: user.name }).then(() => { setShowAnnounceModal(false); setNewAnnouncement({ title: '', content: '' }); }) }); };
+            const handleDeleteAnnouncement = (id) => setConfirm({ isOpen: true, msg: 'Delete announcement?', action: () => announcementsDB.remove(id) });
+            
             const totalIncome = finances.filter(f => f.type === 'income').reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
             const totalExpense = finances.filter(f => f.type === 'expense').reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
-            const totalBalance = totalIncome - totalExpense;
-
+            const generalBalance = finances.filter(f => f.department === 'General Offering' && f.type === 'income').reduce((acc, c) => acc + parseFloat(c.amount), 0) - finances.filter(f => f.department === 'General Offering' && f.type === 'expense').reduce((acc, c) => acc + parseFloat(c.amount), 0);
+            const upcomingEvents = events.filter(e => new Date(e.startDate) >= new Date().setHours(0,0,0,0)).sort((a, b) => new Date(a.startDate) - new Date(b.startDate)).slice(0, 3);
+            
             return (
                 <div className="p-6">
+                    <ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} />
                     <h2 className="text-2xl font-bold mb-6 text-gray-800">Dashboard Overview</h2>
+                    
+                    {/* Countdown Banner */}
+                    {countdown && (
+                        <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-lg shadow-lg p-6 mb-8 text-white flex flex-col md:flex-row items-center justify-between">
+                            <div>
+                                <p className="text-indigo-100 text-sm font-bold uppercase tracking-wider mb-1">Up Next</p>
+                                <h3 className="text-3xl font-bold">{countdown.title}</h3>
+                            </div>
+                            <div className="flex space-x-4 mt-4 md:mt-0 text-center">
+                                <div><span className="text-3xl font-bold block">{countdown.days}</span><span className="text-xs uppercase opacity-75">Days</span></div>
+                                <div><span className="text-3xl font-bold block">{countdown.hours}</span><span className="text-xs uppercase opacity-75">Hrs</span></div>
+                                <div><span className="text-3xl font-bold block">{countdown.mins}</span><span className="text-xs uppercase opacity-75">Mins</span></div>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-indigo-500 cursor-pointer hover:shadow-lg" onClick={() => changeView('members')}>
-                            <div className="flex justify-between items-center"><div><p className="text-gray-500 text-sm">Total Members</p><h3 className="text-2xl font-bold">{members.length}</h3></div><i className="fas fa-users text-indigo-200 text-3xl"></i></div>
+                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-indigo-500 cursor-pointer hover:shadow-lg transition" onClick={() => changeView('members')}>
+                            <div className="flex justify-between items-center">
+                                <div><p className="text-gray-500 text-sm font-bold uppercase">Congregation</p><h3 className="text-2xl font-bold">{members.length} Members</h3></div>
+                                <div className="bg-indigo-100 p-3 rounded-full text-indigo-600"><i className="fas fa-users text-xl"></i></div>
+                            </div>
                         </div>
-                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500 cursor-pointer hover:shadow-lg" onClick={() => changeView('finances')}>
-                            <div className="flex justify-between items-center"><div><p className="text-gray-500 text-sm">Total Funds</p><h3 className="text-2xl font-bold text-green-600">{formatCurrency(totalBalance)}</h3></div><i className="fas fa-hand-holding-usd text-green-200 text-3xl"></i></div>
+                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500 cursor-pointer hover:shadow-lg transition" onClick={() => changeView('finances')}>
+                            <div className="flex justify-between items-center">
+                                <div><p className="text-gray-500 text-sm font-bold uppercase">General Offering</p><h3 className="text-2xl font-bold text-green-600">{formatCurrency(generalBalance)}</h3></div>
+                                <div className="bg-green-100 p-3 rounded-full text-green-600"><i className="fas fa-hand-holding-heart text-xl"></i></div>
+                            </div>
                         </div>
-                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-yellow-500 cursor-pointer hover:shadow-lg" onClick={() => changeView('prayers')}>
-                            <div className="flex justify-between items-center"><div><p className="text-gray-500 text-sm">Prayer Requests</p><h3 className="text-2xl font-bold">{prayers.filter(p => p.status === 'Open').length} Open</h3></div><i className="fas fa-pray text-yellow-200 text-3xl"></i></div>
+                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-yellow-500 cursor-pointer hover:shadow-lg transition" onClick={() => changeView('prayers')}>
+                            <div className="flex justify-between items-center">
+                                <div><p className="text-gray-500 text-sm font-bold uppercase">Prayer Wall</p><h3 className="text-2xl font-bold">{prayers.filter(p => p.status === 'Open').length} Active</h3></div>
+                                <div className="bg-yellow-100 p-3 rounded-full text-yellow-600"><i className="fas fa-pray text-xl"></i></div>
+                            </div>
                         </div>
                     </div>
+                    
+                    {/* Announcements Section */}
+                    <div className="mb-8">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-xl font-bold text-gray-800">Latest Announcements</h3>
+                            {canPostAnnouncement && (
+                                <button onClick={() => setShowAnnounceModal(true)} className="bg-indigo-600 text-white px-4 py-2 rounded text-sm hover:bg-indigo-700">
+                                    <i className="fas fa-bullhorn mr-2"></i> Post Announcement
+                                </button>
+                            )}
+                        </div>
+                        
+                        <div className="grid grid-cols-1 gap-4">
+                            {announcements.length === 0 ? (
+                                <div className="bg-white p-6 rounded-lg shadow text-center text-gray-500 italic">No announcements at this time.</div>
+                            ) : (
+                                announcements.map(ann => (
+                                    <div key={ann.id} className="bg-white p-6 rounded-lg shadow border-l-4 border-orange-500 relative group">
+                                        {canPostAnnouncement && (
+                                            <button onClick={() => handleDeleteAnnouncement(ann.id)} className="absolute top-2 right-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition">
+                                                <i className="fas fa-trash"></i>
+                                            </button>
+                                        )}
+                                        <div className="flex justify-between items-start mb-2">
+                                            <h4 className="font-bold text-lg text-gray-800">{ann.title}</h4>
+                                            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">{formatDate(ann.date)}</span>
+                                        </div>
+                                        <p className="text-gray-600 whitespace-pre-wrap">{ann.content}</p>
+                                        <p className="text-xs text-gray-400 mt-3 font-medium">Posted by: {ann.author}</p>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="bg-white rounded-lg shadow p-6">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="font-bold text-gray-800">Upcoming Events</h3>
+                                <button onClick={() => changeView('calendar')} className="text-indigo-600 text-sm hover:underline">View Calendar</button>
+                            </div>
+                            {upcomingEvents.length === 0 ? <p className="text-gray-500 text-sm italic">No upcoming events scheduled.</p> : (
+                                <div className="space-y-3">{upcomingEvents.map(ev => (<div key={ev.id} className="flex items-center p-3 bg-gray-50 rounded hover:bg-gray-100 transition cursor-pointer" onClick={() => changeView('calendar')}><div className="text-center mr-4 min-w-[50px]"><div className="text-xs font-bold text-red-500 uppercase">{new Date(ev.startDate).toLocaleString('default', { month: 'short' })}</div><div className="text-xl font-bold text-gray-800">{new Date(ev.startDate).getDate()}</div></div><div><h4 className="font-bold text-sm text-gray-800">{ev.title}</h4><p className="text-xs text-gray-500">{formatTime12(ev.time)} • {ev.type}</p></div></div>))}</div>
+                            )}
+                        </div>
+                        <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg shadow p-6 text-white flex flex-col justify-center text-center">
+                            <h3 className="text-indigo-100 text-xs font-bold uppercase tracking-widest mb-4">Verse of the Day</h3>
+                            <p className="text-lg font-serif italic mb-4">"{verse.text}"</p>
+                            <p className="text-sm font-bold">— {verse.ref}</p>
+                        </div>
+                    </div>
+
+                    {/* Announcement Modal */}
+                    {showAnnounceModal && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white p-6 rounded-lg w-full max-w-lg">
+                                <h3 className="text-xl font-bold mb-4">New Announcement</h3>
+                                <form onSubmit={handleAddAnnouncement}>
+                                    <div className="mb-3">
+                                        <label className="block text-xs font-bold text-gray-500 mb-1">Title</label>
+                                        <input className="w-full border p-2 rounded" required value={newAnnouncement.title} onChange={e => setNewAnnouncement({...newAnnouncement, title: e.target.value})} placeholder="e.g. Prayer Meeting Change" />
+                                    </div>
+                                    <div className="mb-4">
+                                        <label className="block text-xs font-bold text-gray-500 mb-1">Content</label>
+                                        <textarea className="w-full border p-2 rounded" rows="4" required value={newAnnouncement.content} onChange={e => setNewAnnouncement({...newAnnouncement, content: e.target.value})} placeholder="Details here..." />
+                                    </div>
+                                    <div className="flex justify-end space-x-2">
+                                        <button type="button" onClick={() => setShowAnnounceModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                                        <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Post</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         };
@@ -719,7 +886,7 @@
                     </div>
 
                     {/* Main Content Area */}
-                    <div className="flex-1 overflow-auto pt-20 md:pt-0 pb-20 md:pb-0 h-full w-full main-content">
+                    <div className="flex-1 overflow-auto pt-20 md:pt-0 pb-20 md:pb-0 h-full w-full main-content safe-pb">
                         {view === 'dashboard' && <Dashboard changeView={setView} members={membersDB.data} finances={financesDB.data} prayers={prayersDB.data} infoDB={infoDB} events={eventsDB.data} announcementsDB={announcementsDB} user={user} />}
                         {view === 'finances' && <Financials user={user} financesDB={financesDB} projectsDB={projectsDB} />}
                         {view === 'members' && <Members user={user} membersDB={membersDB} />}
