@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Elect Word Ministry | Church Management System</title>
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="icon-512.png">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Firebase SDKs (v9 Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background-color: #f3f4f6;
+            overscroll-behavior-y: none; /* Prevents pull-to-refresh on mobile */
+        }
+        .sidebar-link.active { background-color: #4f46e5; color: white; }
+        .sidebar-link:hover:not(.active) { background-color: #e0e7ff; color: #4338ca; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #c7c7c7; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+        
+        .tab-btn.active { border-bottom: 2px solid #4f46e5; color: #4f46e5; font-weight: bold; }
+        .tab-btn { color: #6b7280; font-weight: 500; }
+        
+        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; }
+
+        /* Mobile Safe Area spacing */
+        .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // --- Service Worker Registration ---
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('Service Worker registered', reg))
+                    .catch(err => console.log('Service Worker registration failed', err));
+            });
+        }
+
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // --- FIREBASE CONFIGURATION ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyBjK3NqQ_Mnq0UhwPRTfKvfHqgefea1GE4",
+            authDomain: "ewmwebsite-a9d14.firebaseapp.com",
+            projectId: "ewmwebsite-a9d14",
+            storageBucket: "ewmwebsite-a9d14.firebasestorage.app",
+            messagingSenderId: "105322791826",
+            appId: "1:105322791826:web:ccd09082b15ade6154b74b",
+            measurementId: "G-D5KZY1LJCB"
+        };
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        try {
+            db.settings({ experimentalForceLongPolling: true });
+        } catch(err) {
+            console.warn("Firestore settings warning:", err);
+        }
+
+        // --- Constants & Configuration ---
+        const DEPARTMENTS = ['General Offering', 'Youth Fund', 'Food Fund', "Men's Fund", "Women's Fund", 'Music Fund', 'Pledges'];
+        const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        
+        const CHURCH_STRUCTURE = {
+            "Church Leadership": ["Pastor", "Admin", "Deacon", "Elder", "Church Treasurer"], 
+            "Youth Department": ["Youth Coordinator", "Youth Leader", "Youth Treasurer", "Youth Member"],
+            "Men's Department": ["Men's Treasurer", "Men's Member"],
+            "Women's Department": ["Women's President", "Women's Treasurer", "Women's Member"],
+            "Music Department": ["Worship Leader", "Music Director", "Keyboardist", "Drummer", "Bassist", "Guitarist", "Vocalist"],
+            "Tech Team": ["Tech Lead", "Tech Support"]
+        };
+
+        const DEPT_CONFIG = {
+            'General Offering': { leaders: ['Church Treasurer', 'Pastor'], viewers: ['ALL'] },
+            'Youth Fund': { leaders: ['Youth Coordinator', 'Youth Leader', 'Youth Treasurer'], viewers: ['Youth Member'] },
+            'Food Fund': { leaders: ['Youth Coordinator', 'Youth Leader', 'Youth Treasurer'], viewers: ['Youth Member'] },
+            "Men's Fund": { leaders: ["Men's Treasurer"], viewers: ["Men's Member"] },
+            "Women's Fund": { leaders: ["Women's President", "Women's Treasurer"], viewers: ["Women's Member"] },
+            'Music Fund': { leaders: ["Worship Leader", "Music Director"], viewers: ["Keyboardist", "Drummer", "Bassist", "Guitarist", "Vocalist"] },
+            'Pledges': { leaders: ['Church Treasurer'], viewers: ["Pastor", "Deacon", "Elder"] }
+        };
+
+        const INITIAL_ADMIN = { 
+            username: 'admin', password: 'password123', role: 'admin', name: 'Senior Pastor', 
+            authorizedDepartments: DEPARTMENTS, positions: ['Pastor'] 
+        };
+
+        const INITIAL_INFO = {
+            name: "Elect Word Ministry", address: "123 Faith Avenue, Cityville, ST 12345", phone: "(555) 123-4567",
+            email: "info@electword.cc", 
+            serviceTimes: [
+                { day: "Sunday", time: "09:00" },
+                { day: "Sunday", time: "11:00" },
+                { day: "Wednesday", time: "19:00" }
+            ],
+            mission: "To love God, love people, and make disciples.", vision: "A community transformed by grace and truth.",
+            pastorBio: "Senior Pastor John Doe has been serving since 2010...", socials: { facebook: "", youtube: "", instagram: "" },
+            locationUrl: "https://maps.google.com" 
+        };
+
+        const getPermissions = (user, department) => {
+            if (user.role === 'admin') return { view: true, manage: true };
+            const config = DEPT_CONFIG[department] || { leaders: [], viewers: [] };
+            const userRoles = user.positions || [];
+            const canManage = userRoles.some(r => config.leaders.includes(r));
+            let canView = canManage;
+            if (!canView) {
+                if (config.viewers.includes('ALL')) canView = true;
+                else canView = userRoles.some(r => config.viewers.includes(r));
+            }
+            return { view: canView, manage: canManage };
+        };
+
+        const useFirestore = (collectionName) => {
+            const [data, setData] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [firebaseUser, setFirebaseUser] = useState(null);
+
+            useEffect(() => {
+                const unsubscribeAuth = auth.onAuthStateChanged(async (user) => {
+                    if (user) {
+                        setFirebaseUser(user);
+                    } else {
+                        try {
+                            await auth.signInAnonymously();
+                        } catch (e) {
+                            console.error("Anonymous Sign-in Failed", e);
+                            setError(e); 
+                            setLoading(false); 
+                        }
+                    }
+                });
+                return () => unsubscribeAuth();
+            }, []);
+
+            useEffect(() => {
+                if (!firebaseUser) return;
+                const unsubscribe = db.collection(collectionName).onSnapshot(snapshot => {
+                    const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setData(items);
+                    setLoading(false);
+                    setError(null);
+                }, (err) => {
+                    if (err.code === 'permission-denied') console.warn(`Access denied for ${collectionName}. Check Firestore Rules.`);
+                    else console.error("Error fetching " + collectionName, err);
+                    setError(err);
+                    setLoading(false);
+                });
+                return () => unsubscribe();
+            }, [collectionName, firebaseUser]);
+
+            const add = async (item) => { if (!firebaseUser) return; try { await db.collection(collectionName).add(item); } catch(e) { console.error(e); throw e; } };
+            const update = async (id, item) => { if (!firebaseUser) return; try { const { id: _, ...data } = item; await db.collection(collectionName).doc(id).update(data); } catch(e) { console.error(e); throw e; } };
+            const remove = async (id) => { if (!firebaseUser) return; try { await db.collection(collectionName).doc(id).delete(); } catch(e) { console.error(e); throw e; } };
+            const setDoc = async (id, item) => { if (!firebaseUser) return; try { await db.collection(collectionName).doc(id).set(item); } catch(e) { console.error(e); throw e; } };
+
+            return { data, loading, error, add, update, remove, setDoc };
+        };
+
+        const formatCurrency = (amount) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+        const formatDate = (dateStr) => new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        const isLeadership = (user) => user.role === 'admin' || (user.positions && user.positions.some(p => ["Pastor", "Deacon", "Elder", "Church Treasurer"].includes(p)));
+
+        // --- COMPONENTS ---
+        
+        const ConfirmModal = ({ isOpen, message, onConfirm, onCancel }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]">
+                    <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full mx-4 relative z-[210]">
+                        <div className="text-center mb-4"><div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-2 text-yellow-600 text-xl"><i className="fas fa-exclamation-triangle"></i></div><h3 className="text-lg font-bold text-gray-800">Please Confirm</h3></div>
+                        <p className="text-gray-600 text-center mb-6">{message}</p>
+                        <div className="flex justify-center space-x-3"><button onClick={onCancel} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded font-medium">Cancel</button><button onClick={onConfirm} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-bold">Confirm</button></div>
+                    </div>
+                </div>
+            );
+        };
+
+        const AttendeesModal = ({ isOpen, attendees, onClose }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[150]">
+                    <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full mx-4 relative">
+                        <button onClick={onClose} className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"><i className="fas fa-times"></i></button>
+                        <h3 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Event Attendees</h3>
+                        <div className="max-h-60 overflow-y-auto">{attendees.length === 0 ? <p className="text-gray-500 italic text-sm">No one has joined yet.</p> : <ul className="space-y-2">{attendees.map((name, index) => (<li key={index} className="flex items-center text-sm text-gray-700 bg-gray-50 p-2 rounded"><div className="w-6 h-6 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 text-xs font-bold mr-2">{name.charAt(0)}</div>{name}</li>))}</ul>}</div>
+                        <div className="mt-4 text-center text-xs text-gray-400">Total: {attendees.length}</div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ProfileEditor = ({ user, usersDB, membersDB, onClose, onUpdateUser }) => {
+            const [formData, setFormData] = useState({ name: '', username: '', password: '', phone: '', address: '', email: '' });
+            const [showPassword, setShowPassword] = useState(false);
+            const [error, setError] = useState('');
+            
+            useEffect(() => {
+                const userDoc = usersDB.data.find(u => u.id === user.id);
+                const memberDoc = membersDB.data.find(m => m.name === user.name);
+                if (userDoc) setFormData(prev => ({...prev, name: userDoc.name, username: userDoc.username, password: userDoc.password}));
+                if (memberDoc) setFormData(prev => ({...prev, phone: memberDoc.phone || '', address: memberDoc.address || '', email: memberDoc.email || ''}));
+            }, [user, usersDB.data, membersDB.data]);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                setError('');
+                const existingUser = usersDB.data.find(u => u.username === formData.username && u.id !== user.id);
+                if (existingUser) { setError('Username already taken.'); return; }
+                const userDoc = usersDB.data.find(u => u.id === user.id);
+                if (userDoc) usersDB.update(userDoc.id, { ...userDoc, name: formData.name, username: formData.username, password: formData.password });
+                const memberDoc = membersDB.data.find(m => m.name === user.name);
+                if (memberDoc) membersDB.update(memberDoc.id, { ...memberDoc, name: formData.name, phone: formData.phone, address: formData.address, email: formData.email });
+                else membersDB.add({ name: formData.name, status: 'Active', roles: user.positions || [], phone: formData.phone, address: formData.address, email: formData.email });
+                const updatedUser = { ...user, name: formData.name, username: formData.username, password: formData.password };
+                onUpdateUser(updatedUser);
+                sessionStorage.setItem('cm_current_user', JSON.stringify(updatedUser));
+                onClose();
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[200] p-4">
+                    <div className="bg-white p-8 rounded-lg w-full max-w-md shadow-2xl relative max-h-[90vh] overflow-y-auto">
+                        <button onClick={onClose} className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"><i className="fas fa-times"></i></button>
+                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Edit Profile</h2>
+                        {error && <div className="bg-red-100 text-red-700 p-2 rounded mb-3 text-sm">{error}</div>}
+                        <form onSubmit={handleSubmit}>
+                            <div className="mb-4 border-b pb-4"><h3 className="text-sm font-bold text-indigo-600 mb-2 uppercase">Account Details</h3><div className="mb-3"><label className="block text-xs font-bold text-gray-500 mb-1">Full Name</label><input className="w-full border p-2 rounded" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div><div className="mb-3"><label className="block text-xs font-bold text-gray-500 mb-1">Username</label><input className="w-full border p-2 rounded" required value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} /></div><div className="mb-3 relative"><label className="block text-xs font-bold text-gray-500 mb-1">Password</label><input className="w-full border p-2 rounded" required type={showPassword ? "text" : "password"} value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-7 text-gray-500 hover:text-indigo-600"><i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i></button></div></div>
+                            <div className="mb-4"><h3 className="text-sm font-bold text-indigo-600 mb-2 uppercase">Contact Info</h3><div className="mb-3"><label className="block text-xs font-bold text-gray-500 mb-1">Phone</label><input className="w-full border p-2 rounded" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} /></div><div className="mb-3"><label className="block text-xs font-bold text-gray-500 mb-1">Address</label><input className="w-full border p-2 rounded" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} /></div><div className="mb-3"><label className="block text-xs font-bold text-gray-500 mb-1">Email</label><input className="w-full border p-2 rounded" type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} /></div></div>
+                            <button className="w-full bg-indigo-600 text-white py-2 rounded font-bold hover:bg-indigo-700">Save Changes</button>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        const Login = ({ onLogin, users, loading }) => {
+            const [username, setUsername] = useState('');
+            const [password, setPassword] = useState('');
+            const [showPassword, setShowPassword] = useState(false);
+            const [error, setError] = useState('');
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                const user = users.find(u => u.username === username && u.password === password);
+                if (user) onLogin(user);
+                else setError('Invalid credentials');
+            };
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-gray-100">
+                    <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
+                        <div className="text-center mb-8"><img src="icon-512.png" alt="Logo" className="w-20 h-20 mx-auto mb-4 object-contain" /><h2 className="text-2xl font-bold text-gray-800">Elect Word Ministry</h2><p className="text-gray-500">Sign in to your account</p></div>
+                        {loading ? <p className="text-center text-indigo-600 font-bold animate-pulse">Loading System Data...</p> : (
+                            <form onSubmit={handleSubmit}>
+                                {error && <div className="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm">{error}</div>}
+                                <div className="mb-4"><label className="block text-gray-700 text-sm font-bold mb-2">Username</label><input className="w-full p-3 border rounded" value={username} onChange={e => setUsername(e.target.value)} placeholder="Enter username" /></div>
+                                <div className="mb-6 relative"><label className="block text-gray-700 text-sm font-bold mb-2">Password</label><input className="w-full p-3 border rounded" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-9 text-gray-500 hover:text-indigo-600 focus:outline-none"><i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i></button></div>
+                                <button className="w-full bg-indigo-600 text-white p-3 rounded hover:bg-indigo-700 font-bold transition">Sign In</button>
+                            </form>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const ProfileSetup = ({ user, onComplete, membersDB }) => {
+            const [formData, setFormData] = useState({ phone: '', address: '', email: '' });
+            useEffect(() => {
+                const member = membersDB.data.find(m => m.name === user.name);
+                if (member) setFormData({ phone: member.phone || '', address: member.address || '', email: member.email || '' });
+            }, [user, membersDB.data]);
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                const member = membersDB.data.find(m => m.name === user.name);
+                if (member) membersDB.update(member.id, { ...member, ...formData });
+                else membersDB.add({ name: user.name, status: 'Active', roles: user.positions || [], ...formData });
+                onComplete();
+            };
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white p-8 rounded-lg w-full max-w-md shadow-2xl">
+                        <h2 className="text-2xl font-bold text-gray-800 mb-2">Complete Profile</h2>
+                        <p className="text-gray-500 text-sm mb-4">Please update your contact info.</p>
+                        <form onSubmit={handleSubmit}>
+                            <input className="w-full border p-3 rounded mb-3" required value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} placeholder="Phone (Required)" />
+                            <input className="w-full border p-3 rounded mb-3" required value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} placeholder="Address (Required)" />
+                            <input className="w-full border p-3 rounded mb-4" type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="Email (Optional)" />
+                            <button className="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold hover:bg-indigo-700">Save & Continue</button>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        const Dashboard = ({ changeView, members, finances, prayers, infoDB, events, announcementsDB, user }) => {
+            // ... (Same as previous Dashboard, condensed for space, but logic preserved)
+            const [localInfo, setLocalInfo] = useState(INITIAL_INFO);
+            const [countdown, setCountdown] = useState(null);
+            const [showAnnounceModal, setShowAnnounceModal] = useState(false);
+            const [newAnnouncement, setNewAnnouncement] = useState({ title: '', content: '' });
+            const [confirm, setConfirm] = useState({ isOpen: false, msg: '', action: null });
+
+            const announcements = useMemo(() => (announcementsDB.data || []).sort((a, b) => new Date(b.date) - new Date(a.date)), [announcementsDB.data]);
+            const canPostAnnouncement = user.role === 'admin' || (user.positions && user.positions.includes('Pastor'));
+
+            useEffect(() => { const doc = infoDB.data.find(d => d.id === 'main'); if (doc) setLocalInfo(doc); }, [infoDB.data]);
+
+            useEffect(() => {
+                const calculateNext = () => {
+                    const now = new Date();
+                    let nextTime = null;
+                    let title = "";
+                    const serviceTimes = Array.isArray(localInfo.serviceTimes) ? localInfo.serviceTimes : [];
+                    serviceTimes.forEach(st => {
+                        const dayIndex = DAYS_OF_WEEK.indexOf(st.day);
+                        if (dayIndex === -1) return;
+                        const [hours, minutes] = st.time.split(':').map(Number);
+                        let date = new Date(now);
+                        date.setDate(now.getDate() + ((dayIndex + 7 - now.getDay()) % 7));
+                        date.setHours(hours, minutes, 0, 0);
+                        if (date <= now) date.setDate(date.getDate() + 7);
+                        if (!nextTime || date < nextTime) { nextTime = date; title = `${st.day} Service`; }
+                    });
+                    events.forEach(ev => {
+                        if (ev.type === 'Meeting') return;
+                        const evDate = new Date(`${ev.startDate}T${ev.time}`);
+                        if (evDate > now) { if (!nextTime || evDate < nextTime) { nextTime = evDate; title = ev.title; } }
+                    });
+                    if (nextTime) {
+                        const diff = nextTime - now;
+                        setCountdown({ title, days: Math.floor(diff / 86400000), hours: Math.floor((diff % 86400000) / 3600000), mins: Math.floor((diff % 3600000) / 60000) });
+                    } else setCountdown(null);
+                };
+                calculateNext();
+                const timer = setInterval(calculateNext, 60000);
+                return () => clearInterval(timer);
+            }, [localInfo, events]);
+
+            const handleAddAnnouncement = (e) => { e.preventDefault(); setConfirm({ isOpen: true, msg: 'Post announcement?', action: () => announcementsDB.add({ ...newAnnouncement, date: new Date().toISOString(), author: user.name }).then(() => { setShowAnnounceModal(false); setNewAnnouncement({ title: '', content: '' }); }) }); };
+            const handleDeleteAnnouncement = (id) => setConfirm({ isOpen: true, msg: 'Delete announcement?', action: () => announcementsDB.remove(id) });
+            
+            const totalIncome = finances.filter(f => f.type === 'income').reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
+            const totalExpense = finances.filter(f => f.type === 'expense').reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
+            const generalBalance = finances.filter(f => f.department === 'General Offering' && f.type === 'income').reduce((acc, c) => acc + parseFloat(c.amount), 0) - finances.filter(f => f.department === 'General Offering' && f.type === 'expense').reduce((acc, c) => acc + parseFloat(c.amount), 0);
+            const upcomingEvents = events.filter(e => new Date(e.startDate) >= new Date().setHours(0,0,0,0)).sort((a, b) => new Date(a.startDate) - new Date(b.startDate)).slice(0, 3);
+            const verse = useMemo(() => [{ text: "For I know the plans I have for you...", ref: "Jeremiah 29:11" }, { text: "I can do all things through Christ...", ref: "Philippians 4:13" }][Math.floor(Math.random() * 2)], []);
+
+            return (
+                <div className="p-6">
+                    <ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} />
+                    <h2 className="text-2xl font-bold mb-6 text-gray-800">Dashboard Overview</h2>
+                    {countdown && <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-lg shadow-lg p-6 mb-8 text-white flex flex-col md:flex-row items-center justify-between"><div><p className="text-indigo-100 text-sm font-bold uppercase tracking-wider mb-1">Up Next</p><h3 className="text-3xl font-bold">{countdown.title}</h3></div><div className="flex space-x-4 mt-4 md:mt-0 text-center"><div><span className="text-3xl font-bold block">{countdown.days}</span><span className="text-xs uppercase opacity-75">Days</span></div><div><span className="text-3xl font-bold block">{countdown.hours}</span><span className="text-xs uppercase opacity-75">Hrs</span></div><div><span className="text-3xl font-bold block">{countdown.mins}</span><span className="text-xs uppercase opacity-75">Mins</span></div></div></div>}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-indigo-500 cursor-pointer hover:shadow-lg" onClick={() => changeView('members')}><div className="flex justify-between items-center"><div><p className="text-gray-500 text-sm font-bold uppercase">Congregation</p><h3 className="text-2xl font-bold">{members.length} Members</h3></div><div className="bg-indigo-100 p-3 rounded-full text-indigo-600"><i className="fas fa-users text-xl"></i></div></div></div>
+                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500 cursor-pointer hover:shadow-lg" onClick={() => changeView('finances')}><div className="flex justify-between items-center"><div><p className="text-gray-500 text-sm font-bold uppercase">General Offering</p><h3 className="text-2xl font-bold text-green-600">{formatCurrency(generalBalance)}</h3></div><div className="bg-green-100 p-3 rounded-full text-green-600"><i className="fas fa-hand-holding-heart text-xl"></i></div></div></div>
+                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-yellow-500 cursor-pointer hover:shadow-lg" onClick={() => changeView('prayers')}><div className="flex justify-between items-center"><div><p className="text-gray-500 text-sm font-bold uppercase">Prayer Wall</p><h3 className="text-2xl font-bold">{prayers.filter(p => p.status === 'Open').length} Active</h3></div><div className="bg-yellow-100 p-3 rounded-full text-yellow-600"><i className="fas fa-pray text-xl"></i></div></div></div>
+                    </div>
+                    <div className="mb-8"><div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold text-gray-800">Latest Announcements</h3>{canPostAnnouncement && <button onClick={() => setShowAnnounceModal(true)} className="bg-indigo-600 text-white px-4 py-2 rounded text-sm hover:bg-indigo-700"><i className="fas fa-bullhorn mr-2"></i> Post Announcement</button>}</div><div className="grid grid-cols-1 gap-4">{announcements.length === 0 ? <div className="bg-white p-6 rounded-lg shadow text-center text-gray-500 italic">No announcements at this time.</div> : announcements.map(ann => (<div key={ann.id} className="bg-white p-6 rounded-lg shadow border-l-4 border-orange-500 relative group">{canPostAnnouncement && <button onClick={() => handleDeleteAnnouncement(ann.id)} className="absolute top-2 right-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition"><i className="fas fa-trash"></i></button>}<div className="flex justify-between items-start mb-2"><h4 className="font-bold text-lg text-gray-800">{ann.title}</h4><span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">{formatDate(ann.date)}</span></div><p className="text-gray-600 whitespace-pre-wrap">{ann.content}</p><p className="text-xs text-gray-400 mt-3 font-medium">Posted by: {ann.author}</p></div>))}</div></div>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6"><div className="bg-white rounded-lg shadow p-6"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-800">Upcoming Events</h3><button onClick={() => changeView('calendar')} className="text-indigo-600 text-sm hover:underline">View Calendar</button></div>{upcomingEvents.length === 0 ? <p className="text-gray-500 text-sm italic">No upcoming events scheduled.</p> : <div className="space-y-3">{upcomingEvents.map(ev => (<div key={ev.id} className="flex items-center p-3 bg-gray-50 rounded hover:bg-gray-100 transition cursor-pointer" onClick={() => changeView('calendar')}><div className="text-center mr-4 min-w-[50px]"><div className="text-xs font-bold text-red-500 uppercase">{new Date(ev.startDate).toLocaleString('default', { month: 'short' })}</div><div className="text-xl font-bold text-gray-800">{new Date(ev.startDate).getDate()}</div></div><div><h4 className="font-bold text-sm text-gray-800">{ev.title}</h4><p className="text-xs text-gray-500">{ev.time} • {ev.type}</p></div></div>))}</div>}</div><div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg shadow p-6 text-white flex flex-col justify-center text-center"><h3 className="text-indigo-100 text-xs font-bold uppercase tracking-widest mb-4">Verse of the Day</h3><p className="text-lg font-serif italic mb-4">"{verse.text}"</p><p className="text-sm font-bold">— {verse.ref}</p></div></div>
+                    {showAnnounceModal && <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white p-6 rounded-lg w-full max-w-lg"><h3 className="text-xl font-bold mb-4">New Announcement</h3><form onSubmit={handleAddAnnouncement}><div className="mb-3"><label className="block text-xs font-bold text-gray-500 mb-1">Title</label><input className="w-full border p-2 rounded" required value={newAnnouncement.title} onChange={e => setNewAnnouncement({...newAnnouncement, title: e.target.value})} placeholder="e.g. Prayer Meeting Change" /></div><div className="mb-4"><label className="block text-xs font-bold text-gray-500 mb-1">Content</label><textarea className="w-full border p-2 rounded" rows="4" required value={newAnnouncement.content} onChange={e => setNewAnnouncement({...newAnnouncement, content: e.target.value})} placeholder="Details here..." /></div><div className="flex justify-end space-x-2"><button type="button" onClick={() => setShowAnnounceModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Post</button></div></form></div></div>}
+                </div>
+            );
+        };
+
+        const Financials = ({ user, financesDB, projectsDB }) => { /* ... (Same as previous, using provided structure) */ 
+             const transactions = financesDB.data;
+            const projects = projectsDB.data;
+            const accessibleFunds = useMemo(() => DEPARTMENTS.filter(dept => getPermissions(user, dept).view), [user]);
+            const [form, setForm] = useState({ department: '', projectId: '', amount: '', type: 'income', description: '', date: new Date().toISOString().split('T')[0] });
+            const [editingId, setEditingId] = useState(null);
+            const [confirm, setConfirm] = useState({ isOpen: false, msg: '', action: null });
+            useEffect(() => { const manageable = accessibleFunds.find(d => getPermissions(user, d).manage); if (manageable && !form.department) setForm(prev => ({ ...prev, department: manageable })); else if (accessibleFunds.length > 0 && !form.department) setForm(prev => ({ ...prev, department: accessibleFunds[0] })); }, [accessibleFunds, user]);
+            const handleEdit = (t) => { setForm(t); setEditingId(t.id); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+            const cancelEdit = () => { setEditingId(null); setForm({ ...form, amount: '', description: '', projectId: '', date: new Date().toISOString().split('T')[0] }); };
+            const triggerSubmit = (e) => { e.preventDefault(); const action = editingId ? "Update" : "Add"; setConfirm({ isOpen: true, msg: `${action} this transaction?`, action: () => { if (editingId) financesDB.update(editingId, form).then(cancelEdit); else financesDB.add(form); }}); };
+            const triggerDelete = (id) => { setConfirm({ isOpen: true, msg: 'Delete this transaction permanently?', action: () => { financesDB.remove(id); if(editingId === id) cancelEdit(); }}); };
+            const getDeptBalance = (dept) => { const deptTrans = transactions.filter(t => t.department === dept); const inc = deptTrans.filter(t => t.type === 'income').reduce((a, c) => a + parseFloat(c.amount), 0); const exp = deptTrans.filter(t => t.type === 'expense').reduce((a, c) => a + parseFloat(c.amount), 0); return inc - exp; };
+            const visibleTransactions = transactions.filter(t => accessibleFunds.includes(t.department));
+            const availableProjects = projects.filter(p => p.department === form.department && p.status !== 'Completed');
+            const canManageCurrentFund = getPermissions(user, form.department).manage;
+            if (accessibleFunds.length === 0) return <div className="p-6 text-center text-gray-500">You do not have permission to view any financial records.</div>;
+            return (<div className="p-6"><ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} /><div className="flex flex-col md:flex-row justify-between items-center mb-6"><h2 className="text-2xl font-bold text-gray-800">Financial Tracker</h2></div><div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8 overflow-x-auto pb-4">{accessibleFunds.map(dept => (<div key={dept} className="bg-white p-4 rounded shadow min-w-[150px] border-t-2 border-indigo-500"><p className="text-xs text-gray-500 font-bold uppercase truncate">{dept}</p><p className={`text-lg font-bold ${getDeptBalance(dept) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(getDeptBalance(dept))}</p></div>))}</div><div className="flex flex-col lg:flex-row gap-6">{accessibleFunds.some(dept => getPermissions(user, dept).manage) && (<div className="lg:w-1/3 bg-white p-6 rounded-lg shadow h-fit"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg">{editingId ? 'Edit Transaction' : 'New Transaction'}</h3>{editingId && <button onClick={cancelEdit} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>}</div><form onSubmit={triggerSubmit}><div className="mb-3"><label className="text-xs font-bold text-gray-500">Fund</label><select className="w-full border p-2 rounded" value={form.department} onChange={e => setForm({...form, department: e.target.value, projectId: ''})}>{accessibleFunds.filter(dept => getPermissions(user, dept).manage).map(d => <option key={d} value={d}>{d}</option>)}</select></div><div className="mb-3"><label className="text-xs font-bold text-gray-500">Type</label><select className="w-full border p-2 rounded" value={form.type} onChange={e => setForm({...form, type: e.target.value})}><option value="income">Income / Donation</option><option value="expense">Expense</option></select></div>{availableProjects.length > 0 && <div className="mb-3 bg-indigo-50 p-2 rounded border border-indigo-100"><label className="text-xs font-bold text-indigo-800">Project (Optional)</label><select className="w-full border p-2 rounded text-sm" value={form.projectId} onChange={e => setForm({...form, projectId: e.target.value})}><option value="">-- None --</option>{availableProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>}<div className="mb-3"><label className="text-xs font-bold text-gray-500">Amount</label><input type="number" step="0.01" required className="w-full border p-2 rounded" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} /></div><div className="mb-3"><label className="text-xs font-bold text-gray-500">Date</label><input type="date" required className="w-full border p-2 rounded" value={form.date} onChange={e => setForm({...form, date: e.target.value})} /></div><div className="mb-4"><label className="text-xs font-bold text-gray-500">Desc</label><input type="text" required className="w-full border p-2 rounded" value={form.description} onChange={e => setForm({...form, description: e.target.value})} /></div>{canManageCurrentFund ? <button type="submit" className={`w-full text-white py-2 rounded font-bold ${editingId ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>{editingId ? 'Update Transaction' : 'Add Transaction'}</button> : <p className="text-xs text-red-500 text-center">You cannot add records to this fund.</p>}</form></div>)}<div className="lg:w-2/3 bg-white rounded-lg shadow overflow-hidden flex-1"><table className="w-full text-left border-collapse"><thead className="bg-gray-50"><tr><th className="p-3 text-xs font-bold text-gray-600 border-b">Date</th><th className="p-3 text-xs font-bold text-gray-600 border-b">Fund/Proj</th><th className="p-3 text-xs font-bold text-gray-600 border-b">Desc</th><th className="p-3 text-xs font-bold text-gray-600 border-b text-right">Amount</th><th className="p-3 text-xs font-bold text-gray-600 border-b">Action</th></tr></thead><tbody>{visibleTransactions.length === 0 ? <tr><td colSpan="5" className="p-4 text-center text-gray-500">No records found.</td></tr> : visibleTransactions.map(t => { const canEditThis = getPermissions(user, t.department).manage; return (<tr key={t.id} className={`hover:bg-gray-50 border-b ${editingId === t.id ? 'bg-blue-50' : ''}`}><td className="p-3 text-sm">{formatDate(t.date)}</td><td className="p-3 text-sm"><span className="px-2 py-1 bg-gray-100 rounded text-xs font-bold block w-fit">{t.department}</span>{t.projectId && <span className="text-xs text-indigo-600 block mt-1">↳ {projects.find(p=>p.id == t.projectId)?.name}</span>}</td><td className="p-3 text-sm">{t.description}</td><td className={`p-3 text-sm font-bold text-right ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>{t.type === 'expense' && '-'}{formatCurrency(t.amount)}</td><td className="p-3 text-sm text-center">{canEditThis && <div className="flex items-center justify-center space-x-2"><button onClick={() => handleEdit(t)} className="text-blue-500 hover:text-blue-700"><i className="fas fa-edit"></i></button><button onClick={() => triggerDelete(t.id)} className="text-red-400 hover:text-red-600"><i className="fas fa-trash"></i></button></div>}</td></tr>); })}</tbody></table></div></div></div>);
+        };
+
+        const Members = ({ user, membersDB }) => { /* ... (Same as previous Members component) */
+            const members = membersDB.data;
+            const [showModal, setShowModal] = useState(false);
+            const [form, setForm] = useState({ name: '', email: '', phone: '', address: '', status: 'Active', roles: [] });
+            const [editingId, setEditingId] = useState(null);
+            const [confirm, setConfirm] = useState({ isOpen: false, msg: '', action: null });
+
+            const resetForm = () => { setForm({ name: '', email: '', phone: '', address: '', status: 'Active', roles: [] }); setEditingId(null); setShowModal(false); };
+            const handleEdit = (member) => { setForm(member); setEditingId(member.id); setShowModal(true); };
+            const triggerDelete = (id) => { setConfirm({ isOpen: true, msg: 'Delete this member?', action: () => { membersDB.remove(id); }}); };
+            const triggerSubmit = (e) => { e.preventDefault(); const action = editingId ? "Update" : "Add"; setConfirm({ isOpen: true, msg: `${action} this member?`, action: () => { if (editingId) { membersDB.update(editingId, form).then(resetForm); } else { membersDB.add(form).then(resetForm); } }}); };
+            const groupedMembers = useMemo(() => { const groups = {}; Object.keys(CHURCH_STRUCTURE).forEach(dept => groups[dept] = []); groups["General Congregation"] = []; const PRIORITY_ORDER = ["Church Leadership", "Music Department", "Youth Department", "Men's Department", "Women's Department", "Tech Team"]; members.forEach(m => { let assigned = false; const memberRoles = m.roles || []; for (const dept of PRIORITY_ORDER) { const roles = CHURCH_STRUCTURE[dept]; if (memberRoles.some(r => roles.includes(r))) { groups[dept].push(m); assigned = true; break; } } if (!assigned) groups["General Congregation"].push(m); }); return groups; }, [members]);
+
+            return (<div className="p-6"><ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} /><div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-gray-800">Congregation Directory</h2>{user.role === 'admin' && <button onClick={() => { resetForm(); setShowModal(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"><i className="fas fa-plus mr-2"></i> Add Member</button>}</div><div className="space-y-8">{Object.entries(groupedMembers).map(([dept, deptMembers]) => (deptMembers.length > 0 && (<div key={dept}><h3 className="text-lg font-bold text-indigo-800 border-b border-indigo-200 pb-2 mb-4 uppercase tracking-wide">{dept}</h3><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{deptMembers.map(m => (<div key={m.id} className="bg-white p-4 rounded-lg shadow flex items-start space-x-4 relative group">{user.role === 'admin' && (<div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition z-10 bg-white rounded p-1"><button onClick={() => handleEdit(m)} className="text-blue-500 hover:text-blue-700"><i className="fas fa-edit"></i></button><button onClick={() => triggerDelete(m.id)} className="text-red-500 hover:text-red-700"><i className="fas fa-trash"></i></button></div>)}<div className="bg-indigo-100 rounded-full w-12 h-12 flex items-center justify-center text-indigo-600 font-bold text-xl flex-shrink-0">{m.name.charAt(0)}</div><div className="flex-1 min-w-0"><div className="flex justify-between items-start"><h3 className="font-bold text-gray-800 truncate">{m.name}</h3></div><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${m.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{m.status}</span>{m.roles && m.roles.length > 0 && <div className="flex flex-wrap gap-1 mt-1 mb-2">{m.roles.map((r,i) => <span key={i} className="bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded text-[10px]">{r}</span>)}</div>}{isLeadership(user) ? <><p className="text-sm text-gray-500 truncate"><i className="fas fa-envelope w-4"></i> {m.email || 'N/A'}</p><p className="text-sm text-gray-500 truncate"><i className="fas fa-phone w-4"></i> {m.phone || 'N/A'}</p><p className="text-sm text-gray-500 truncate"><i className="fas fa-home w-4"></i> {m.address || 'N/A'}</p></> : <p className="text-xs text-gray-400 italic mt-2">Contact details hidden</p>}</div></div>))}</div></div>)))}</div>{showModal && <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white p-6 rounded-lg w-full max-w-lg overflow-y-auto"><h3 className="text-xl font-bold mb-4">{editingId ? 'Edit Member' : 'Add New Member'}</h3><form onSubmit={triggerSubmit}><div className="space-y-3"><input className="w-full border p-2 rounded" placeholder="Full Name" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} /><select className="w-full border p-2 rounded" value={form.status} onChange={e => setForm({...form, status: e.target.value})}><option>Active</option><option>Visitor</option><option>Inactive</option></select><input className="w-full border p-2 rounded" placeholder="Email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} /><input className="w-full border p-2 rounded" placeholder="Phone" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /><input className="w-full border p-2 rounded" placeholder="Address" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div><div className="mt-4 flex justify-end space-x-2"><button type="button" onClick={resetForm} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">{editingId ? 'Update' : 'Save'} Member</button></div></form></div></div>}</div>);
+        };
+
+        const PrayerWall = ({ user, prayersDB }) => {
+            const prayers = prayersDB.data;
+            const [request, setRequest] = useState('');
+            const [isAnonymous, setIsAnonymous] = useState(false);
+            const [confirm, setConfirm] = useState({ isOpen: false, msg: '', action: null });
+            const [activeTab, setActiveTab] = useState('open'); 
+
+            const triggerSubmit = (e) => { e.preventDefault(); setConfirm({ isOpen: true, msg: 'Submit prayer request?', action: () => { prayersDB.add({ userId: user.id, authorName: user.name, content: request, date: new Date().toISOString(), status: 'Open', isAnonymous }).then(() => setRequest('')); }}); };
+            const toggleStatus = (p) => { prayersDB.update(p.id, { ...p, status: p.status === 'Open' ? 'Prayed For' : 'Open' }); };
+            const visiblePrayers = prayers.filter(p => { const canSee = user.role === 'admin' || user.positions?.includes('Pastor') || p.userId === user.id; if (!canSee) return false; return activeTab === 'open' ? p.status === 'Open' : p.status === 'Prayed For'; });
+
+            return (<div className="p-6"><ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} /><h2 className="text-2xl font-bold mb-6 text-gray-800">Prayer Wall</h2><div className="bg-white p-6 rounded-lg shadow mb-8"><h3 className="text-lg font-bold mb-2">Submit a Prayer Request</h3><form onSubmit={triggerSubmit}><textarea className="w-full border p-3 rounded mb-3 focus:outline-none focus:border-indigo-500" rows="3" placeholder="How can we pray for you?" value={request} onChange={e => setRequest(e.target.value)} required></textarea><div className="flex items-center justify-between"><label className="flex items-center text-sm text-gray-600"><input type="checkbox" className="mr-2" checked={isAnonymous} onChange={e => setIsAnonymous(e.target.checked)} /> Keep Anonymous</label><button type="submit" className="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700">Submit Request</button></div></form></div><div className="flex border-b mb-4"><button className={`px-4 py-2 font-medium ${activeTab === 'open' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500'}`} onClick={() => setActiveTab('open')}>New Prayers</button><button className={`px-4 py-2 font-medium ${activeTab === 'prayed' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500'}`} onClick={() => setActiveTab('prayed')}>Prayed For</button></div><div className="space-y-4">{visiblePrayers.map(p => (<div key={p.id} className={`p-4 rounded-lg border-l-4 shadow-sm bg-white ${p.status === 'Open' ? 'border-yellow-400' : 'border-green-500'}`}><div className="flex justify-between items-start"><div><p className="text-gray-800 mb-2">{p.content}</p><div className="text-xs text-gray-400"><span><i className="far fa-clock"></i> {formatDate(p.date)}</span> • <span>{p.isAnonymous ? "Anonymous" : p.authorName}</span></div></div>{user.role === 'admin' || user.positions?.includes('Pastor') ? <button onClick={() => toggleStatus(p)} className={`text-xs px-2 py-1 rounded ${p.status === 'Open' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>{p.status === 'Open' ? 'Mark Prayed' : 'Re-Open'}</button> : <span className={`text-xs px-2 py-1 rounded ${p.status === 'Open' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>{p.status}</span>}</div></div>))}</div></div>);
+        };
+
+        const Projects = ({ user, projectsDB, financesDB }) => {
+            // ... (Same as provided Project component, condensed)
+             const projects = projectsDB.data; const finances = financesDB.data;
+            const [newProj, setNewProj] = useState({ name: '', department: DEPARTMENTS[0], status: 'Planning', budget: '', imageUrl: '', link: '', comments: [] });
+            const [commentInputs, setCommentInputs] = useState({});
+            const [editingComment, setEditingComment] = useState(null);
+            const [editCommentText, setEditCommentText] = useState('');
+            const [confirm, setConfirm] = useState({ isOpen: false, msg: '', action: null });
+            const [editingProject, setEditingProject] = useState(null);
+            const canManage = (projDept) => getPermissions(user, projDept).manage;
+            const canView = (projDept) => getPermissions(user, projDept).view;
+            const manageableDepts = DEPARTMENTS.filter(d => canManage(d));
+            const handleImageUpload = (e, isEditing) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => { if(isEditing) setEditingProject(prev => ({...prev, imageUrl: reader.result})); else setNewProj(prev => ({...prev, imageUrl: reader.result})); }; reader.readAsDataURL(file); } };
+            const triggerAdd = (e) => { e.preventDefault(); setConfirm({ isOpen: true, msg: 'Create new project?', action: () => { projectsDB.add(newProj).then(() => { setNewProj({ name: '', department: manageableDepts[0] || DEPARTMENTS[0], status: 'Planning', budget: '', imageUrl: '', link: '', comments: [] }); }); }}); };
+            const triggerUpdateProject = (e) => { e.preventDefault(); setConfirm({ isOpen: true, msg: 'Update this project?', action: () => { projectsDB.update(editingProject.id, editingProject).then(() => setEditingProject(null)); }}); };
+            const triggerDelete = (id) => { setConfirm({ isOpen: true, msg: 'Delete this project?', action: () => projectsDB.remove(id) }); };
+            const addComment = (projId) => { const text = commentInputs[projId]; if (!text) return; const p = projects.find(x => x.id === projId); if(p) { const updatedComments = [...(p.comments || []), { user: user.name, text, date: new Date().toISOString() }]; projectsDB.update(projId, { ...p, comments: updatedComments }); setCommentInputs({ ...commentInputs, [projId]: '' }); } };
+            const startEditComment = (projId, index, text) => { setEditingComment({ projId, index }); setEditCommentText(text); };
+            const saveEditComment = () => { const p = projects.find(x => x.id === editingComment.projId); if(p) { const newComments = [...p.comments]; newComments[editingComment.index] = { ...newComments[editingComment.index], text: editCommentText }; projectsDB.update(p.id, { ...p, comments: newComments }); setEditingComment(null); setEditCommentText(''); } };
+            const COLUMNS = ['Planning', 'In Progress', 'Completed'];
+            const visibleProjects = projects.filter(p => canView(p.department));
+            if (visibleProjects.length === 0 && manageableDepts.length === 0) return <div className="p-6 text-center text-gray-500">You do not have access to view projects for any department.</div>;
+            return (
+                <div className="p-6">
+                    <ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} />
+                    {editingProject && (<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4"><div className="bg-white p-6 rounded-lg w-full max-w-lg overflow-y-auto max-h-[90vh]"><h3 className="text-xl font-bold mb-4">Edit Project</h3><form onSubmit={triggerUpdateProject}><div className="space-y-3"><div><label className="text-xs font-bold text-gray-500">Name</label><input className="w-full border p-2 rounded" value={editingProject.name} onChange={e => setEditingProject({...editingProject, name: e.target.value})} required /></div><div><label className="text-xs font-bold text-gray-500">Department</label><select className="w-full border p-2 rounded" value={editingProject.department} onChange={e => setEditingProject({...editingProject, department: e.target.value})}>{DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}</select></div><div><label className="text-xs font-bold text-gray-500">Budget</label><input type="number" className="w-full border p-2 rounded" value={editingProject.budget} onChange={e => setEditingProject({...editingProject, budget: e.target.value})} /></div><div><label className="text-xs font-bold text-gray-500">Project Link</label><input type="url" className="w-full border p-2 rounded" value={editingProject.link} onChange={e => setEditingProject({...editingProject, link: e.target.value})} /></div><div><label className="text-xs font-bold text-gray-500">Update Image</label><input type="file" accept="image/*" className="w-full border p-2 rounded text-xs" onChange={(e) => handleImageUpload(e, true)} /></div><div><label className="text-xs font-bold text-gray-500">Status</label><select className="w-full border p-2 rounded" value={editingProject.status} onChange={e => setEditingProject({...editingProject, status: e.target.value})}>{COLUMNS.map(s => <option key={s} value={s}>{s}</option>)}</select></div></div><div className="mt-4 flex justify-end space-x-2"><button type="button" onClick={() => setEditingProject(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Update Project</button></div></form></div></div>)}
+                    <h2 className="text-2xl font-bold mb-6 text-gray-800">Department Projects</h2>
+                    {manageableDepts.length > 0 && (<div className="bg-white p-4 rounded-lg shadow mb-8"><h3 className="font-bold text-sm mb-3 text-gray-500 uppercase">Create New Project</h3><form onSubmit={triggerAdd} className="space-y-4"><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="flex-1"><label className="text-xs font-bold text-gray-500">Project Name</label><input className="w-full border p-2 rounded" required value={newProj.name} onChange={e => setNewProj({...newProj, name: e.target.value})} placeholder="e.g. Winter Retreat" /></div><div className="flex-1"><label className="text-xs font-bold text-gray-500">Department</label><select className="w-full border p-2 rounded" value={newProj.department} onChange={e => setNewProj({...newProj, department: e.target.value})}>{manageableDepts.map(d => <option key={d} value={d}>{d}</option>)}</select></div><div className="flex-1"><label className="text-xs font-bold text-gray-500">Est. Budget ($)</label><input type="number" className="w-full border p-2 rounded" required value={newProj.budget} onChange={e => setNewProj({...newProj, budget: e.target.value})} placeholder="0.00" /></div><div className="flex-1"><label className="text-xs font-bold text-gray-500">Status</label><select className="w-full border p-2 rounded" value={newProj.status} onChange={e => setNewProj({...newProj, status: e.target.value})}><option>Planning</option><option>In Progress</option><option>Completed</option></select></div><div className="flex-1"><label className="text-xs font-bold text-gray-500">Link (Optional)</label><input type="url" className="w-full border p-2 rounded" value={newProj.link} onChange={e => setNewProj({...newProj, link: e.target.value})} placeholder="https://..." /></div><div className="flex-1"><label className="text-xs font-bold text-gray-500">Image (Optional)</label><input type="file" accept="image/*" className="w-full border p-2 rounded text-xs" onChange={(e) => handleImageUpload(e, false)} /></div></div><button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 w-full md:w-auto">Add Project</button></form></div>)}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">{COLUMNS.map(col => (<div key={col} className="bg-gray-100 p-4 rounded-lg min-h-[500px]"><h3 className="font-bold text-gray-700 mb-4 border-b pb-2 uppercase text-sm tracking-wide">{col}</h3><div className="space-y-4">{visibleProjects.filter(p => p.status === col).map(p => { const expense = finances.filter(t => t.projectId === p.id && t.type === 'expense').reduce((a,c) => a + parseFloat(c.amount), 0); return (<div key={p.id} className="bg-white p-4 rounded-lg shadow relative group">{canManage(p.department) && (<div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition z-10 bg-white rounded p-1"><button onClick={() => setEditingProject(p)} className="text-gray-400 hover:text-blue-500"><i className="fas fa-edit"></i></button><button onClick={() => triggerDelete(p.id)} className="text-gray-400 hover:text-red-500"><i className="fas fa-trash"></i></button></div>)}{p.imageUrl && <div className="mb-2 h-32 bg-gray-100 rounded overflow-hidden"><img src={p.imageUrl} className="w-full h-full object-cover" alt="Project" /></div>}<span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded mb-1 inline-block">{p.department}</span><h4 className="font-bold text-md mb-2">{p.name}</h4><div className="bg-gray-50 p-2 rounded mb-3 text-xs flex justify-between items-center"><div><span className="text-gray-500 block">Budget</span><span className="font-bold">{formatCurrency(p.budget || 0)}</span></div>{p.link && <a href={p.link} target="_blank" className="text-indigo-600 hover:underline"><i className="fas fa-external-link-alt"></i> Link</a>}</div><div className="mb-3 border-t pt-2"><p className="text-[10px] font-bold text-gray-400 mb-1">COMMENTS</p><div className="max-h-24 overflow-y-auto space-y-1">{(p.comments || []).map((c, i) => (<div key={i} className="text-xs bg-gray-50 p-1.5 rounded relative group/comment">{editingComment?.projId === p.id && editingComment?.index === i ? (<div className="flex items-center"><input className="flex-1 border text-xs p-1 rounded" value={editCommentText} onChange={e => setEditCommentText(e.target.value)} /><button onClick={saveEditComment} className="ml-1 text-green-600"><i className="fas fa-check"></i></button><button onClick={() => setEditingComment(null)} className="ml-1 text-red-600"><i className="fas fa-times"></i></button></div>) : (<div><span className="font-bold text-gray-700">{c.user}: </span>{c.text}{(canManage(p.department) || c.user === user.name) && (<button onClick={() => startEditComment(p.id, i, c.text)} className="absolute top-1 right-1 text-gray-300 hover:text-blue-500 hidden group-hover/comment:block"><i className="fas fa-pencil-alt text-[10px]"></i></button>)}</div>)}</div>))}</div></div><div className="flex gap-1"><input className="flex-1 border text-xs p-1 rounded" placeholder="Comment..." value={commentInputs[p.id] || ''} onChange={e => setCommentInputs({...commentInputs, [p.id]: e.target.value})} /><button onClick={() => addComment(p.id)} className="bg-gray-200 text-xs px-2 rounded hover:bg-gray-300"><i className="fas fa-paper-plane"></i></button></div></div>); })}</div></div>))}</div>
+                </div>
+            );
+        };
+
+        const Calendar = ({ user, eventsDB }) => { /* ... (Same as provided Calendar component, condensed) */ 
+            const events = eventsDB.data;
+            const [newEvent, setNewEvent] = useState({ title: '', startDate: '', endDate: '', time: '', type: 'Event' });
+            const [confirm, setConfirm] = useState({ isOpen: false, msg: '', action: null });
+            const [viewingAttendees, setViewingAttendees] = useState(null); 
+            const triggerAdd = (e) => { e.preventDefault(); setConfirm({ isOpen: true, msg: 'Create new event?', action: () => { eventsDB.add({ ...newEvent, endDate: newEvent.endDate || newEvent.startDate, attendees: [] }).then(() => setNewEvent({ title: '', startDate: '', endDate: '', time: '', type: 'Event' })); }}); };
+            const triggerDelete = (id) => { setConfirm({ isOpen: true, msg: 'Delete event?', action: () => eventsDB.remove(id) }); };
+            const toggleAttendance = (ev) => { const attendees = ev.attendees || []; const updatedAttendees = attendees.includes(user.name) ? attendees.filter(n => n !== user.name) : [...attendees, user.name]; eventsDB.update(ev.id, { ...ev, attendees: updatedAttendees }); };
+            const getAttendeesList = () => { if(!viewingAttendees) return []; const ev = events.find(e => e.id === viewingAttendees); return ev ? (ev.attendees || []) : []; };
+            return (<div className="p-6"><ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} /><AttendeesModal isOpen={!!viewingAttendees} attendees={getAttendeesList()} onClose={() => setViewingAttendees(null)} /><h2 className="text-2xl font-bold mb-6 text-gray-800">Church Calendar</h2><div className="flex flex-col lg:flex-row gap-6">{user.role === 'admin' && (<div className="lg:w-1/3 bg-white p-6 rounded-lg shadow h-fit"><h3 className="font-bold text-lg mb-4">Add Event</h3><form onSubmit={triggerAdd}><div className="mb-3"><label className="text-xs font-bold text-gray-500">Title</label><input className="w-full border p-2 rounded" required value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} /></div><div className="mb-3"><label className="text-xs font-bold text-gray-500">Type</label><select className="w-full border p-2 rounded" value={newEvent.type} onChange={e => setNewEvent({...newEvent, type: e.target.value})}><option>Event</option><option>Meeting</option></select></div><div className="mb-3"><label className="text-xs font-bold text-gray-500">Start Date</label><input type="date" className="w-full border p-2 rounded" required value={newEvent.startDate} onChange={e => setNewEvent({...newEvent, startDate: e.target.value})} /></div><div className="mb-3"><label className="text-xs font-bold text-gray-500">End Date (Optional)</label><input type="date" className="w-full border p-2 rounded" value={newEvent.endDate} onChange={e => setNewEvent({...newEvent, endDate: e.target.value})} /></div><div className="mb-3"><label className="text-xs font-bold text-gray-500">Time</label><input type="time" className="w-full border p-2 rounded" required value={newEvent.time} onChange={e => setNewEvent({...newEvent, time: e.target.value})} /></div><button type="submit" className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700">Create Event</button></form></div>)}<div className="flex-1 space-y-4">{events.map(ev => (<div key={ev.id} className="bg-white p-4 rounded-lg shadow flex flex-col md:flex-row md:items-center"><div className="flex items-center flex-1"><div className="bg-red-50 text-red-600 p-3 rounded-lg text-center min-w-[80px] mr-4"><div className="text-xs font-bold uppercase">{new Date(ev.startDate).toLocaleString('default', { month: 'short' })}</div><div className="text-2xl font-bold">{new Date(ev.startDate).getDate()}</div></div><div className="flex-1"><div className="flex items-center space-x-2"><span className={`text-[10px] px-2 py-0.5 rounded font-bold ${ev.type === 'Meeting' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{ev.type || 'Event'}</span><h4 className="font-bold text-lg text-gray-800">{ev.title}</h4></div><div className="text-sm text-gray-500 flex flex-col"><span><i className="far fa-clock"></i> {ev.time}</span>{ev.startDate !== ev.endDate && <span className="text-xs text-indigo-600 font-bold">Ends: {formatDate(ev.endDate)}</span>}</div><div className="mt-2 text-xs text-gray-600"><button onClick={() => setViewingAttendees(ev.id)} className="font-bold hover:text-indigo-600"><i className="fas fa-users"></i> {(ev.attendees || []).length} Joining (View All)</button></div></div></div><div className="flex items-center justify-end mt-4 md:mt-0 md:ml-4 gap-3"><button onClick={() => toggleAttendance(ev)} className={`px-4 py-2 rounded text-sm font-bold transition ${(ev.attendees || []).includes(user.name) ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'}`}>{(ev.attendees || []).includes(user.name) ? 'Leave' : 'Join'}</button>{user.role === 'admin' && <button onClick={() => triggerDelete(ev.id)} className="text-gray-300 hover:text-red-500"><i className="fas fa-trash"></i></button>}</div></div>))}</div></div></div>);
+        };
+
+        const ChurchInfo = ({ user, infoDB }) => { /* ... (Same as provided ChurchInfo component, condensed) */ 
+             const [info, setInfo] = useState(JSON.parse(localStorage.getItem('cm_info') || JSON.stringify(INITIAL_INFO)));
+            const [activeTab, setActiveTab] = useState('about');
+            const [isEditing, setIsEditing] = useState(false);
+            const [localInfo, setLocalInfo] = useState(INITIAL_INFO);
+            const [confirm, setConfirm] = useState({ isOpen: false, msg: '', action: null });
+            const [newService, setNewService] = useState({ day: "Sunday", time: "09:00" });
+            useEffect(() => { const doc = infoDB.data.find(d => d.id === 'main'); if (doc) setLocalInfo(doc); else infoDB.setDoc('main', INITIAL_INFO); }, [infoDB.data]);
+            const handleImageUpload = (e, field) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => { setLocalInfo(prev => ({...prev, [field]: reader.result})); }; reader.readAsDataURL(file); } };
+            const triggerSave = () => { setConfirm({ isOpen: true, msg: 'Save changes to info?', action: () => { infoDB.setDoc('main', localInfo); setIsEditing(false); }}); };
+            const addService = () => { const updated = [...(localInfo.serviceTimes || []), newService]; setLocalInfo({...localInfo, serviceTimes: updated}); };
+            const removeService = (index) => { const updated = [...(localInfo.serviceTimes || [])]; updated.splice(index, 1); setLocalInfo({...localInfo, serviceTimes: updated}); };
+            const renderContent = () => {
+                switch(activeTab) {
+                    case 'about': return <div className="space-y-4"><div className="mb-4 text-center">{localInfo.churchImage ? <img src={localInfo.churchImage} alt="Church" className="w-full h-48 object-cover rounded-lg shadow-md mb-2" /> : <div className="w-full h-48 bg-gray-200 rounded-lg flex items-center justify-center text-gray-500 mb-2"><i className="fas fa-church text-4xl"></i></div>}{isEditing && <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'churchImage')} className="text-xs" />}</div><div><label className="block text-xs font-bold text-gray-500">Name</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.name} onChange={e => setLocalInfo({...localInfo, name: e.target.value})} /> : <p className="text-lg font-medium">{localInfo.name}</p>}</div><div><label className="block text-xs font-bold text-gray-500">Address</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.address} onChange={e => setLocalInfo({...localInfo, address: e.target.value})} /> : <p>{localInfo.address}</p>}</div><div><label className="block text-xs font-bold text-gray-500">Phone</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.phone} onChange={e => setLocalInfo({...localInfo, phone: e.target.value})} /> : <p>{localInfo.phone}</p>}</div><div><label className="block text-xs font-bold text-gray-500 mb-2">Service Times</label>{isEditing ? (<div className="bg-gray-50 p-2 rounded"><div className="flex gap-2 mb-2"><select className="border p-1 rounded" value={newService.day} onChange={e => setNewService({...newService, day: e.target.value})}>{DAYS_OF_WEEK.map(d => <option key={d}>{d}</option>)}</select><input type="time" className="border p-1 rounded" value={newService.time} onChange={e => setNewService({...newService, time: e.target.value})} /><button onClick={addService} className="bg-blue-500 text-white px-2 rounded text-xs">Add</button></div><ul>{(Array.isArray(localInfo.serviceTimes) ? localInfo.serviceTimes : []).map((s, i) => (<li key={i} className="flex justify-between text-sm border-b py-1"><span>{s.day} @ {s.time}</span><button onClick={() => removeService(i)} className="text-red-500 text-xs">Remove</button></li>))}</ul></div>) : (<ul className="list-disc ml-4 text-sm text-gray-700">{(Array.isArray(localInfo.serviceTimes) ? localInfo.serviceTimes : []).map((s, i) => <li key={i}>{s.day}s at {s.time}</li>)}</ul>)}</div></div>;
+                    case 'mission': return <div className="space-y-4"><div><label className="block text-xs font-bold text-gray-500">Mission</label>{isEditing ? <textarea className="w-full border p-2 rounded" rows="3" value={localInfo.mission} onChange={e => setLocalInfo({...localInfo, mission: e.target.value})} /> : <p className="italic">"{localInfo.mission}"</p>}</div><div><label className="block text-xs font-bold text-gray-500">Vision</label>{isEditing ? <textarea className="w-full border p-2 rounded" rows="3" value={localInfo.vision} onChange={e => setLocalInfo({...localInfo, vision: e.target.value})} /> : <p className="italic">"{localInfo.vision}"</p>}</div></div>;
+                    case 'pastor': return <div className="space-y-4"><h3 className="font-bold">Our Senior Pastor</h3><div className="flex flex-col md:flex-row gap-4 items-start"><div className="w-full md:w-1/3">{localInfo.pastorImage ? <img src={localInfo.pastorImage} alt="Pastor" className="w-full h-48 object-cover rounded-lg shadow-md mb-2" /> : <div className="w-full h-48 bg-gray-200 rounded-lg flex items-center justify-center text-gray-500 mb-2"><i className="fas fa-user text-4xl"></i></div>}{isEditing && <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'pastorImage')} className="text-xs w-full" />}</div><div className="w-full md:w-2/3">{isEditing ? <textarea className="w-full border p-2 rounded" rows="6" value={localInfo.pastorBio} onChange={e => setLocalInfo({...localInfo, pastorBio: e.target.value})} /> : <p className="whitespace-pre-wrap text-gray-700">{localInfo.pastorBio}</p>}</div></div></div>;
+                    case 'location': return <div className="space-y-4"><div><label className="block text-xs font-bold text-gray-500">Address</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.address} onChange={e => setLocalInfo({...localInfo, address: e.target.value})} /> : <p>{localInfo.address}</p>}</div><div className="h-64 bg-gray-200 rounded overflow-hidden shadow-inner relative"><iframe width="100%" height="100%" frameBorder="0" style={{border:0}} src={`https://maps.google.com/maps?q=${encodeURIComponent(localInfo.address)}&t=&z=15&ie=UTF8&iwloc=&output=embed`} allowFullScreen></iframe></div><a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(localInfo.address)}`} target="_blank" className="block w-full text-center bg-blue-600 text-white py-2 rounded hover:bg-blue-700 font-bold transition"><i className="fas fa-directions mr-2"></i> Get Directions</a></div>;
+                    case 'social': return <div className="space-y-4"><div><label className="block text-xs font-bold text-gray-500">Facebook</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.socials.facebook} onChange={e => setLocalInfo({...localInfo, socials: {...localInfo.socials, facebook: e.target.value}})} /> : <a href={localInfo.socials.facebook} className="text-blue-600 block">{localInfo.socials.facebook || 'Not set'}</a>}</div><div><label className="block text-xs font-bold text-gray-500">YouTube</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.socials.youtube} onChange={e => setLocalInfo({...localInfo, socials: {...localInfo.socials, youtube: e.target.value}})} /> : <a href={localInfo.socials.youtube} className="text-red-600 block">{localInfo.socials.youtube || 'Not set'}</a>}</div></div>;
+                }
+            };
+            return (
+                <div className="p-6">
+                    <ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} />
+                    <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-gray-800">Church Information</h2>{user.role === 'admin' && !isEditing && <button onClick={() => setIsEditing(true)} className="bg-indigo-100 text-indigo-600 px-4 py-2 rounded font-bold hover:bg-indigo-200">Edit Info</button>}{isEditing && <div className="space-x-2"><button onClick={() => setIsEditing(false)} className="text-gray-500">Cancel</button><button onClick={triggerSave} className="bg-green-600 text-white px-4 py-2 rounded">Save</button></div>}</div>
+                    <div className="bg-white rounded-lg shadow"><div className="flex border-b overflow-x-auto">{['about', 'mission', 'pastor', 'location', 'social'].map(tab => (<button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-4 capitalize whitespace-nowrap tab-btn ${activeTab === tab ? 'active' : ''}`}>{tab === 'pastor' ? 'Our Pastor' : tab}</button>))}</div><div className="p-6">{renderContent()}</div></div>
+                </div>
+            );
+        };
+
+        const Settings = ({ user, usersDB, membersDB }) => { /* ... (Same as provided Settings component, condensed) */ 
+            const users = usersDB.data; const members = membersDB.data;
+            const [editingUserId, setEditingUserId] = useState(null);
+            const [newUser, setNewUser] = useState({ username: '', password: '', name: '', role: 'member', authorizedDepartments: [], positions: [] });
+            const [confirm, setConfirm] = useState({ isOpen: false, msg: '', action: null });
+            const [errorMsg, setErrorMsg] = useState('');
+            const [showPassword, setShowPassword] = useState(false);
+            const togglePosition = (pos) => { const current = newUser.positions; setNewUser({ ...newUser, positions: current.includes(pos) ? current.filter(p => p !== pos) : [...current, pos] }); };
+            const toggleAuthDept = (dept) => { const current = newUser.authorizedDepartments; setNewUser({ ...newUser, authorizedDepartments: current.includes(dept) ? current.filter(d => d !== dept) : [...current, dept] }); };
+            const handleEditUser = (u) => { setEditingUserId(u.id); setNewUser({ username: u.username, password: u.password, name: u.name, role: u.role, authorizedDepartments: u.authorizedDepartments || [], positions: u.positions || [] }); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+            const triggerDelete = (id) => { setConfirm({ isOpen: true, msg: 'Permanently delete this user account?', action: () => { usersDB.remove(id); if (editingUserId === id) cancelEdit(); }}); };
+            const cancelEdit = () => { setEditingUserId(null); setNewUser({ username: '', password: '', name: '', role: 'member', authorizedDepartments: [], positions: [] }); setErrorMsg(''); };
+            const triggerSubmit = (e) => { e.preventDefault(); setErrorMsg(''); const action = editingUserId ? "update" : "create"; if (!editingUserId && users.find(u => u.username === newUser.username)) { setErrorMsg('Username already exists'); return; } setConfirm({ isOpen: true, msg: `Are you sure you want to ${action} this account?`, action: () => { if (editingUserId) { usersDB.update(editingUserId, newUser).then(cancelEdit); } else { usersDB.add(newUser); const existingMember = members.find(m => m.name === newUser.name); if (!existingMember) { membersDB.add({ name: newUser.name, roles: newUser.positions, status: 'Active', email: '', phone: '', address: '' }); } setNewUser({ username: '', password: '', name: '', role: 'member', authorizedDepartments: [], positions: [] }); } }}); };
+            return (<div className="p-6"><ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} /><h2 className="text-2xl font-bold mb-6 text-gray-800">System Settings</h2><div className="bg-white p-6 rounded-lg shadow border-t-4 border-indigo-600"><div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold">{editingUserId ? 'Edit User Account' : 'Create New Account'}</h3>{editingUserId && <button onClick={cancelEdit} className="text-sm text-gray-500 hover:text-gray-700">Cancel Edit</button>}</div>{errorMsg && <div className="bg-red-100 text-red-700 p-2 rounded mb-3 text-sm">{errorMsg}</div>}<form onSubmit={triggerSubmit}><div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4"><input className="border p-2 rounded" placeholder="Full Name" required value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} /><input className="border p-2 rounded" placeholder="Username" required value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} /><div className="relative"><input className="w-full border p-2 rounded" type={showPassword ? "text" : "password"} placeholder="Password" required value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-2 text-gray-500 hover:text-indigo-600 focus:outline-none"><i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i></button></div><div><select className="w-full border p-2 rounded bg-gray-50" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}><option value="member">Role: Member</option><option value="treasurer">Role: Treasurer</option><option value="admin">Role: Admin</option></select></div></div>{newUser.role === 'treasurer' && <div className="mb-4 bg-yellow-50 p-4 rounded border border-yellow-100"><label className="block text-xs font-bold text-yellow-800 mb-2">Select Accessible Funds:</label><div className="grid grid-cols-2 md:grid-cols-4 gap-2">{DEPARTMENTS.map(dept => (<label key={dept} className="flex items-center text-sm cursor-pointer"><input type="checkbox" className="mr-2" checked={newUser.authorizedDepartments.includes(dept)} onChange={() => toggleAuthDept(dept)} />{dept}</label>))}</div></div>}<div className="mb-6"><label className="block text-sm font-bold text-gray-700 mb-2">Assign Church Roles</label><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 border p-4 rounded bg-gray-50 max-h-64 overflow-y-auto">{Object.entries(CHURCH_STRUCTURE).map(([category, roles]) => (<div key={category} className="mb-2"><h4 className="text-xs font-bold text-indigo-600 uppercase mb-1 border-b border-indigo-100 pb-1">{category}</h4>{roles.map(role => (<label key={role} className="flex items-center text-sm py-1 hover:bg-gray-100 rounded px-1 cursor-pointer"><input type="checkbox" className="mr-2" checked={newUser.positions.includes(role)} onChange={() => togglePosition(role)} />{role}</label>))}</div>))}</div></div><button type="submit" className={`w-full text-white px-6 py-3 rounded font-bold ${editingUserId ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>{editingUserId ? 'Update Account' : 'Create Account'}</button></form><div className="mt-8 border-t pt-4"><h4 className="font-bold text-sm text-gray-500 mb-2">Existing System Users</h4><div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto">{users.map(u => (<div key={u.id} className={`p-3 bg-gray-50 rounded border flex justify-between items-center text-sm ${editingUserId === u.id ? 'border-green-500 border-2' : ''}`}><div><span className="font-bold">{u.name}</span> <span className="text-gray-400 text-xs ml-2">@{u.username}</span></div><div className="flex gap-2"><button onClick={() => handleEditUser(u)} className="text-blue-500 hover:text-blue-700 p-1"><i className="fas fa-edit"></i></button>{u.id !== 1 && <button onClick={() => triggerDelete(u.id)} className="text-red-500 hover:text-red-700 p-1"><i className="fas fa-trash"></i></button>}</div></div>))}</div></div></div></div>);
+        };
+
+        const App = () => { /* ... (App remains largely the same, imports moved to top) */
+             const [user, setUser] = useState(null);
+            const [view, setView] = useState('dashboard');
+            const [showProfileSetup, setShowProfileSetup] = useState(false);
+            const [showProfileEdit, setShowProfileEdit] = useState(false);
+            const usersDB = useFirestore('users');
+            const membersDB = useFirestore('members');
+            const financesDB = useFirestore('finances');
+            const projectsDB = useFirestore('projects');
+            const eventsDB = useFirestore('events');
+            const prayersDB = useFirestore('prayers');
+            const infoDB = useFirestore('info');
+            const announcementsDB = useFirestore('announcements');
+            useEffect(() => { if (!usersDB.loading && !usersDB.error && usersDB.data.length === 0) { usersDB.add(INITIAL_ADMIN).catch(e => { console.log("Auto-create Admin skipped due to permissions/error:", e.code); }); } }, [usersDB.loading, usersDB.data, usersDB.error]);
+            useEffect(() => { const savedUser = sessionStorage.getItem('cm_current_user'); if (savedUser) setUser(JSON.parse(savedUser)); }, []);
+            const checkProfileCompletion = (userData) => { const member = membersDB.data.find(m => m.name === userData.name); if (!member || !member.address || !member.phone) setShowProfileSetup(true); };
+            const handleLogin = (userData) => { setUser(userData); sessionStorage.setItem('cm_current_user', JSON.stringify(userData)); checkProfileCompletion(userData); setView('dashboard'); };
+            const handleLogout = () => { setUser(null); sessionStorage.removeItem('cm_current_user'); setView('dashboard'); };
+            if (!user) return <Login onLogin={handleLogin} users={usersDB.data} loading={usersDB.loading} />;
+            const NavItem = ({ id, icon, label, allowedRoles }) => { if (allowedRoles && !allowedRoles.includes(user.role)) return null; return (<button onClick={() => setView(id)} className={`sidebar-link w-full text-left p-3 rounded mb-1 flex items-center transition ${view === id ? 'active' : 'text-gray-600'}`}><i className={`fas ${icon} w-8 text-center`}></i><span className="font-medium">{label}</span></button>); };
+            const anyLoading = usersDB.loading || membersDB.loading || financesDB.loading || projectsDB.loading || eventsDB.loading || prayersDB.loading || infoDB.loading;
+            const anyError = usersDB.error || membersDB.error || financesDB.error || projectsDB.error || eventsDB.error || prayersDB.error || infoDB.error;
+
+            return (
+                <div className="flex h-screen overflow-hidden">
+                    {anyLoading && !anyError && <div className="loading-overlay"><i className="fas fa-spinner fa-spin text-4xl text-indigo-600 mb-2"></i><p className="font-bold text-gray-700">Loading Data...</p></div>}
+                    {anyError && (<div className="fixed inset-0 flex items-center justify-center bg-gray-50 z-[2000] p-4"><div className="bg-white p-8 rounded-lg shadow-2xl max-w-lg text-center border-l-4 border-red-500 overflow-y-auto max-h-[90vh]">{anyError.code === 'auth/configuration-not-found' || anyError.code === 'auth/operation-not-allowed' ? (<><i className="fas fa-user-lock text-red-500 text-5xl mb-4"></i><h2 className="text-2xl font-bold text-gray-800 mb-2">Authentication Not Enabled</h2><p className="text-gray-600 mb-6">The Anonymous Sign-in method is disabled in your Firebase project.</p><div className="text-sm bg-gray-100 p-4 rounded text-left"><strong>How to fix:</strong><ol className="list-decimal ml-4 mt-2"><li>Go to <a href="https://console.firebase.google.com/" target="_blank" className="text-indigo-600 underline">Firebase Console</a> > Authentication.</li><li>Click the <b>Sign-in method</b> tab.</li><li>Enable <b>Anonymous</b> provider.</li></ol></div></>) : anyError.code === 'permission-denied' ? (<><i className="fas fa-shield-alt text-red-500 text-5xl mb-4"></i><h2 className="text-2xl font-bold text-gray-800 mb-2">Database Rules Blocking Access</h2><p className="text-gray-600 mb-6">Your app is trying to fetch data, but the Firestore Security Rules are set to deny access.</p><div className="text-sm bg-gray-100 p-4 rounded text-left"><strong>Immediate Fix (For Development):</strong><ol className="list-decimal ml-4 mt-2"><li>Go to <a href="https://console.firebase.google.com/" target="_blank" className="text-indigo-600 underline">Firebase Console</a> > Firestore Database.</li><li>Click the <b>Rules</b> tab.</li><li>Change the code to look exactly like this:</li><pre className="bg-gray-800 text-white p-2 rounded mt-2 text-xs overflow-x-auto">{`rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{document=**} {\n      allow read, write: if true;\n    }\n  }\n}`}</pre><li>Click <b>Publish</b>.</li><li>Refresh this page.</li></ol></div></>) : (<><i className="fas fa-wifi text-red-500 text-5xl mb-4"></i><h2 className="text-2xl font-bold text-gray-800 mb-2">Connection Issue</h2><p className="text-gray-600 mb-6">Could not connect to the Database. Check your internet or API settings.</p><p className="text-xs text-red-400">{anyError.message}</p><div className="mt-4 p-2 bg-yellow-100 border border-yellow-200 text-yellow-800 rounded text-sm text-left"><strong>Tip:</strong> Ensure you have created the <b>Firestore Database</b> in the console.<br/><a href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore`} target="_blank" className="underline font-bold">Go to Console</a></div></>)}</div></div>)}
+                    {showProfileSetup && <ProfileSetup user={user} membersDB={membersDB} onComplete={() => setShowProfileSetup(false)} />}
+                    {showProfileEdit && <ProfileEditor user={user} usersDB={usersDB} membersDB={membersDB} onClose={() => setShowProfileEdit(false)} onUpdateUser={setUser} />}
+                    <div className="w-64 bg-white shadow-xl z-10 flex flex-col hidden md:flex"><div className="p-6 border-b flex items-center space-x-3"><img src="icon-512.png" alt="Logo" className="w-10 h-10 rounded flex-shrink-0 object-contain" /><div><h1 className="font-bold text-sm text-gray-800 leading-tight">Elect Word Ministry</h1><p className="text-xs text-gray-500 font-medium">Community Church</p></div></div><nav className="flex-1 p-4 overflow-y-auto"><NavItem id="dashboard" icon="fa-chart-pie" label="Dashboard" /><NavItem id="info" icon="fa-info-circle" label="Church Info" /><NavItem id="calendar" icon="fa-calendar-alt" label="Calendar" /><NavItem id="prayers" icon="fa-praying-hands" label="Prayer Wall" /><div className="my-4 border-t border-gray-200"></div><p className="px-3 text-xs font-bold text-gray-400 uppercase mb-2">Management</p><NavItem id="finances" icon="fa-file-invoice-dollar" label="Financials" /><NavItem id="members" icon="fa-users" label="Congregation" /><NavItem id="projects" icon="fa-tasks" label="Projects" /><div className="my-4 border-t border-gray-200"></div><NavItem id="settings" icon="fa-cog" label="Settings" allowedRoles={['admin']} /></nav><div className="p-4 border-t bg-gray-50"><div className="flex items-center mb-3 cursor-pointer hover:bg-gray-100 p-2 rounded transition" onClick={() => setShowProfileEdit(true)}><div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold mr-2">{user.name.charAt(0)}</div><div className="overflow-hidden"><p className="text-sm font-bold text-gray-800 truncate">{user.name}</p><p className="text-xs text-gray-500 capitalize">{user.role}</p></div><i className="fas fa-pencil-alt ml-auto text-gray-400 text-xs"></i></div><button onClick={handleLogout} className="w-full text-sm text-red-600 hover:text-red-800 text-left"><i className="fas fa-sign-out-alt mr-2"></i> Sign Out</button></div></div>
+                    <div className="md:hidden fixed top-0 w-full bg-white shadow z-20 p-4 flex justify-between items-center"><div><span className="font-bold block text-gray-800">Elect Word Ministry</span><span className="text-xs text-gray-500 block">Community Church</span></div><button onClick={handleLogout} className="text-red-600"><i className="fas fa-sign-out-alt"></i></button></div>
+                    <div className="md:hidden fixed bottom-0 w-full bg-white shadow-lg z-20 flex justify-around p-3 border-t"><button onClick={() => setView('dashboard')} className={`text-xl ${view === 'dashboard' ? 'text-indigo-600' : 'text-gray-400'}`}><i className="fas fa-home"></i></button><button onClick={() => setView('calendar')} className={`text-xl ${view === 'calendar' ? 'text-indigo-600' : 'text-gray-400'}`}><i className="fas fa-calendar"></i></button><button onClick={() => setView('prayers')} className={`text-xl ${view === 'prayers' ? 'text-indigo-600' : 'text-gray-400'}`}><i className="fas fa-pray"></i></button><button onClick={() => setView('finances')} className={`text-xl ${view === 'finances' ? 'text-indigo-600' : 'text-gray-400'}`}><i className="fas fa-dollar-sign"></i></button></div>
+                    <div className="flex-1 overflow-auto pt-16 md:pt-0 pb-16 md:pb-0">
+                        {view === 'dashboard' && <Dashboard changeView={setView} members={membersDB.data} finances={financesDB.data} prayers={prayersDB.data} infoDB={infoDB} events={eventsDB.data} announcementsDB={announcementsDB} user={user} />}
+                        {view === 'finances' && <Financials user={user} financesDB={financesDB} projectsDB={projectsDB} />}
+                        {view === 'members' && <Members user={user} membersDB={membersDB} />}
+                        {view === 'prayers' && <PrayerWall user={user} prayersDB={prayersDB} />}
+                        {view === 'projects' && <Projects user={user} projectsDB={projectsDB} financesDB={financesDB} />}
+                        {view === 'calendar' && <Calendar user={user} eventsDB={eventsDB} />}
+                        {view === 'info' && <ChurchInfo user={user} infoDB={infoDB} />}
+                        {view === 'settings' && <Settings user={user} usersDB={usersDB} membersDB={membersDB} />}
+                    </div>
+                </div>
+            );
+        };
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
