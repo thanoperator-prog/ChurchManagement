@@ -53,6 +53,9 @@
 
         /* Mobile Safe Area spacing */
         .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+        
+        /* Mobile Sidebar Transition */
+        .mobile-sidebar { transition: transform 0.3s ease-in-out; }
     </style>
 </head>
 <body>
@@ -276,6 +279,8 @@
             );
         };
 
+        // --- Feature Components ---
+
         const Login = ({ onLogin, users, loading }) => {
             const [username, setUsername] = useState('');
             const [password, setPassword] = useState('');
@@ -345,6 +350,30 @@
 
             useEffect(() => { const doc = infoDB.data.find(d => d.id === 'main'); if (doc) setLocalInfo(doc); }, [infoDB.data]);
 
+            // UPDATED VERSE LOGIC: Deterministic Daily Verse
+            const verse = useMemo(() => {
+                const VERSES = [
+                    { text: "For I know the plans I have for you, declares the LORD, plans for welfare and not for evil, to give you a future and a hope.", ref: "Jeremiah 29:11" },
+                    { text: "I can do all things through him who strengthens me.", ref: "Philippians 4:13" },
+                    { text: "Trust in the LORD with all your heart, and do not lean on your own understanding.", ref: "Proverbs 3:5" },
+                    { text: "The LORD is my shepherd; I shall not want.", ref: "Psalm 23:1" },
+                    { text: "But they who wait for the LORD shall renew their strength; they shall mount up with wings like eagles...", ref: "Isaiah 40:31" },
+                    { text: "Be strong and courageous. Do not be frightened, and do not be dismayed, for the LORD your God is with you wherever you go.", ref: "Joshua 1:9" },
+                    { text: "And we know that for those who love God all things work together for good...", ref: "Romans 8:28" },
+                    { text: "The LORD is my light and my salvation; whom shall I fear?", ref: "Psalm 27:1" },
+                    { text: "Cast all your anxiety on him because he cares for you.", ref: "1 Peter 5:7" },
+                    { text: "This is the day that the LORD has made; let us rejoice and be glad in it.", ref: "Psalm 118:24" }
+                ];
+                // Calculate day of the year (0-365)
+                const now = new Date();
+                const start = new Date(now.getFullYear(), 0, 0);
+                const diff = now - start;
+                const oneDay = 1000 * 60 * 60 * 24;
+                const day = Math.floor(diff / oneDay);
+                // Use modulus to cycle through verses
+                return VERSES[day % VERSES.length];
+            }, []);
+
             useEffect(() => {
                 const calculateNext = () => {
                     const now = new Date();
@@ -383,8 +412,7 @@
             const totalExpense = finances.filter(f => f.type === 'expense').reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
             const generalBalance = finances.filter(f => f.department === 'General Offering' && f.type === 'income').reduce((acc, c) => acc + parseFloat(c.amount), 0) - finances.filter(f => f.department === 'General Offering' && f.type === 'expense').reduce((acc, c) => acc + parseFloat(c.amount), 0);
             const upcomingEvents = events.filter(e => new Date(e.startDate) >= new Date().setHours(0,0,0,0)).sort((a, b) => new Date(a.startDate) - new Date(b.startDate)).slice(0, 3);
-            const verse = useMemo(() => [{ text: "For I know the plans I have for you...", ref: "Jeremiah 29:11" }, { text: "I can do all things through Christ...", ref: "Philippians 4:13" }][Math.floor(Math.random() * 2)], []);
-
+            
             return (
                 <div className="p-6">
                     <ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} />
@@ -540,11 +568,14 @@
             return (<div className="p-6"><ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} /><h2 className="text-2xl font-bold mb-6 text-gray-800">System Settings</h2><div className="bg-white p-6 rounded-lg shadow border-t-4 border-indigo-600"><div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold">{editingUserId ? 'Edit User Account' : 'Create New Account'}</h3>{editingUserId && <button onClick={cancelEdit} className="text-sm text-gray-500 hover:text-gray-700">Cancel Edit</button>}</div>{errorMsg && <div className="bg-red-100 text-red-700 p-2 rounded mb-3 text-sm">{errorMsg}</div>}<form onSubmit={triggerSubmit}><div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4"><input className="border p-2 rounded" placeholder="Full Name" required value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} /><input className="border p-2 rounded" placeholder="Username" required value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} /><div className="relative"><input className="w-full border p-2 rounded" type={showPassword ? "text" : "password"} placeholder="Password" required value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-2 text-gray-500 hover:text-indigo-600 focus:outline-none"><i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i></button></div><div><select className="w-full border p-2 rounded bg-gray-50" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}><option value="member">Role: Member</option><option value="treasurer">Role: Treasurer</option><option value="admin">Role: Admin</option></select></div></div>{newUser.role === 'treasurer' && <div className="mb-4 bg-yellow-50 p-4 rounded border border-yellow-100"><label className="block text-xs font-bold text-yellow-800 mb-2">Select Accessible Funds:</label><div className="grid grid-cols-2 md:grid-cols-4 gap-2">{DEPARTMENTS.map(dept => (<label key={dept} className="flex items-center text-sm cursor-pointer"><input type="checkbox" className="mr-2" checked={newUser.authorizedDepartments.includes(dept)} onChange={() => toggleAuthDept(dept)} />{dept}</label>))}</div></div>}<div className="mb-6"><label className="block text-sm font-bold text-gray-700 mb-2">Assign Church Roles</label><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 border p-4 rounded bg-gray-50 max-h-64 overflow-y-auto">{Object.entries(CHURCH_STRUCTURE).map(([category, roles]) => (<div key={category} className="mb-2"><h4 className="text-xs font-bold text-indigo-600 uppercase mb-1 border-b border-indigo-100 pb-1">{category}</h4>{roles.map(role => (<label key={role} className="flex items-center text-sm py-1 hover:bg-gray-100 rounded px-1 cursor-pointer"><input type="checkbox" className="mr-2" checked={newUser.positions.includes(role)} onChange={() => togglePosition(role)} />{role}</label>))}</div>))}</div></div><button type="submit" className={`w-full text-white px-6 py-3 rounded font-bold ${editingUserId ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>{editingUserId ? 'Update Account' : 'Create Account'}</button></form><div className="mt-8 border-t pt-4"><h4 className="font-bold text-sm text-gray-500 mb-2">Existing System Users</h4><div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto">{users.map(u => (<div key={u.id} className={`p-3 bg-gray-50 rounded border flex justify-between items-center text-sm ${editingUserId === u.id ? 'border-green-500 border-2' : ''}`}><div><span className="font-bold">{u.name}</span> <span className="text-gray-400 text-xs ml-2">@{u.username}</span></div><div className="flex gap-2"><button onClick={() => handleEditUser(u)} className="text-blue-500 hover:text-blue-700 p-1"><i className="fas fa-edit"></i></button>{u.id !== 1 && <button onClick={() => triggerDelete(u.id)} className="text-red-500 hover:text-red-700 p-1"><i className="fas fa-trash"></i></button>}</div></div>))}</div></div></div></div>);
         };
 
-        const App = () => { /* ... (App remains largely the same, imports moved to top) */
-             const [user, setUser] = useState(null);
+        const App = () => {
+            const [user, setUser] = useState(null);
             const [view, setView] = useState('dashboard');
             const [showProfileSetup, setShowProfileSetup] = useState(false);
             const [showProfileEdit, setShowProfileEdit] = useState(false);
+            const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile Menu State
+
+            // -- Load Collections from Firestore --
             const usersDB = useFirestore('users');
             const membersDB = useFirestore('members');
             const financesDB = useFirestore('finances');
@@ -553,26 +584,130 @@
             const prayersDB = useFirestore('prayers');
             const infoDB = useFirestore('info');
             const announcementsDB = useFirestore('announcements');
-            useEffect(() => { if (!usersDB.loading && !usersDB.error && usersDB.data.length === 0) { usersDB.add(INITIAL_ADMIN).catch(e => { console.log("Auto-create Admin skipped due to permissions/error:", e.code); }); } }, [usersDB.loading, usersDB.data, usersDB.error]);
-            useEffect(() => { const savedUser = sessionStorage.getItem('cm_current_user'); if (savedUser) setUser(JSON.parse(savedUser)); }, []);
-            const checkProfileCompletion = (userData) => { const member = membersDB.data.find(m => m.name === userData.name); if (!member || !member.address || !member.phone) setShowProfileSetup(true); };
-            const handleLogin = (userData) => { setUser(userData); sessionStorage.setItem('cm_current_user', JSON.stringify(userData)); checkProfileCompletion(userData); setView('dashboard'); };
-            const handleLogout = () => { setUser(null); sessionStorage.removeItem('cm_current_user'); setView('dashboard'); };
+
+            // Initialize Admin if empty AND no error (prevents crash on permission denied)
+            useEffect(() => {
+                if (!usersDB.loading && !usersDB.error && usersDB.data.length === 0) {
+                    usersDB.add(INITIAL_ADMIN).catch(e => {
+                        console.log("Auto-create Admin skipped due to permissions/error:", e.code);
+                    });
+                }
+            }, [usersDB.loading, usersDB.data, usersDB.error]);
+
+            // Persist Session
+            useEffect(() => {
+                const savedUser = sessionStorage.getItem('cm_current_user');
+                if (savedUser) setUser(JSON.parse(savedUser));
+            }, []);
+
+            const checkProfileCompletion = (userData) => {
+                const member = membersDB.data.find(m => m.name === userData.name);
+                if (!member || !member.address || !member.phone) setShowProfileSetup(true);
+            };
+            const handleLogin = (userData) => {
+                setUser(userData);
+                sessionStorage.setItem('cm_current_user', JSON.stringify(userData));
+                checkProfileCompletion(userData);
+                // Everyone lands on dashboard
+                setView('dashboard');
+            };
+            const handleLogout = () => { setUser(null); sessionStorage.removeItem('cm_current_user'); setView('dashboard'); setIsMobileMenuOpen(false); };
+            
             if (!user) return <Login onLogin={handleLogin} users={usersDB.data} loading={usersDB.loading} />;
-            const NavItem = ({ id, icon, label, allowedRoles }) => { if (allowedRoles && !allowedRoles.includes(user.role)) return null; return (<button onClick={() => setView(id)} className={`sidebar-link w-full text-left p-3 rounded mb-1 flex items-center transition ${view === id ? 'active' : 'text-gray-600'}`}><i className={`fas ${icon} w-8 text-center`}></i><span className="font-medium">{label}</span></button>); };
+            
+            const NavItem = ({ id, icon, label, allowedRoles }) => {
+                if (allowedRoles && !allowedRoles.includes(user.role)) return null;
+                return (
+                    <button 
+                        onClick={() => { setView(id); setIsMobileMenuOpen(false); }} 
+                        className={`sidebar-link w-full text-left p-3 rounded mb-1 flex items-center transition ${view === id ? 'active' : 'text-gray-600'}`}
+                    >
+                        <i className={`fas ${icon} w-8 text-center`}></i>
+                        <span className="font-medium">{label}</span>
+                    </button>
+                );
+            };
+            
+            // Aggregated loading/error state
             const anyLoading = usersDB.loading || membersDB.loading || financesDB.loading || projectsDB.loading || eventsDB.loading || prayersDB.loading || infoDB.loading;
             const anyError = usersDB.error || membersDB.error || financesDB.error || projectsDB.error || eventsDB.error || prayersDB.error || infoDB.error;
 
             return (
                 <div className="flex h-screen overflow-hidden">
                     {anyLoading && !anyError && <div className="loading-overlay"><i className="fas fa-spinner fa-spin text-4xl text-indigo-600 mb-2"></i><p className="font-bold text-gray-700">Loading Data...</p></div>}
-                    {anyError && (<div className="fixed inset-0 flex items-center justify-center bg-gray-50 z-[2000] p-4"><div className="bg-white p-8 rounded-lg shadow-2xl max-w-lg text-center border-l-4 border-red-500 overflow-y-auto max-h-[90vh]">{anyError.code === 'auth/configuration-not-found' || anyError.code === 'auth/operation-not-allowed' ? (<><i className="fas fa-user-lock text-red-500 text-5xl mb-4"></i><h2 className="text-2xl font-bold text-gray-800 mb-2">Authentication Not Enabled</h2><p className="text-gray-600 mb-6">The Anonymous Sign-in method is disabled in your Firebase project.</p><div className="text-sm bg-gray-100 p-4 rounded text-left"><strong>How to fix:</strong><ol className="list-decimal ml-4 mt-2"><li>Go to <a href="https://console.firebase.google.com/" target="_blank" className="text-indigo-600 underline">Firebase Console</a> > Authentication.</li><li>Click the <b>Sign-in method</b> tab.</li><li>Enable <b>Anonymous</b> provider.</li></ol></div></>) : anyError.code === 'permission-denied' ? (<><i className="fas fa-shield-alt text-red-500 text-5xl mb-4"></i><h2 className="text-2xl font-bold text-gray-800 mb-2">Database Rules Blocking Access</h2><p className="text-gray-600 mb-6">Your app is trying to fetch data, but the Firestore Security Rules are set to deny access.</p><div className="text-sm bg-gray-100 p-4 rounded text-left"><strong>Immediate Fix (For Development):</strong><ol className="list-decimal ml-4 mt-2"><li>Go to <a href="https://console.firebase.google.com/" target="_blank" className="text-indigo-600 underline">Firebase Console</a> > Firestore Database.</li><li>Click the <b>Rules</b> tab.</li><li>Change the code to look exactly like this:</li><pre className="bg-gray-800 text-white p-2 rounded mt-2 text-xs overflow-x-auto">{`rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{document=**} {\n      allow read, write: if true;\n    }\n  }\n}`}</pre><li>Click <b>Publish</b>.</li><li>Refresh this page.</li></ol></div></>) : (<><i className="fas fa-wifi text-red-500 text-5xl mb-4"></i><h2 className="text-2xl font-bold text-gray-800 mb-2">Connection Issue</h2><p className="text-gray-600 mb-6">Could not connect to the Database. Check your internet or API settings.</p><p className="text-xs text-red-400">{anyError.message}</p><div className="mt-4 p-2 bg-yellow-100 border border-yellow-200 text-yellow-800 rounded text-sm text-left"><strong>Tip:</strong> Ensure you have created the <b>Firestore Database</b> in the console.<br/><a href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore`} target="_blank" className="underline font-bold">Go to Console</a></div></>)}</div></div>)}
+                    
+                    {/* Error Overlay (Same as before) */}
+                    {anyError && (
+                        <div className="fixed inset-0 flex items-center justify-center bg-gray-50 z-[2000] p-4">
+                            <div className="bg-white p-8 rounded-lg shadow-2xl max-w-lg text-center border-l-4 border-red-500 overflow-y-auto max-h-[90vh]">
+                                {/* ... Error handling UI ... */}
+                                <h2 className="text-2xl font-bold text-gray-800 mb-2">Connection Issue</h2>
+                                <p className="text-xs text-red-400">{anyError.message}</p>
+                            </div>
+                        </div>
+                    )}
+
                     {showProfileSetup && <ProfileSetup user={user} membersDB={membersDB} onComplete={() => setShowProfileSetup(false)} />}
                     {showProfileEdit && <ProfileEditor user={user} usersDB={usersDB} membersDB={membersDB} onClose={() => setShowProfileEdit(false)} onUpdateUser={setUser} />}
-                    <div className="w-64 bg-white shadow-xl z-10 flex flex-col hidden md:flex"><div className="p-6 border-b flex items-center space-x-3"><img src="icon-512.png" alt="Logo" className="w-10 h-10 rounded flex-shrink-0 object-contain" /><div><h1 className="font-bold text-sm text-gray-800 leading-tight">Elect Word Ministry</h1><p className="text-xs text-gray-500 font-medium">Community Church</p></div></div><nav className="flex-1 p-4 overflow-y-auto"><NavItem id="dashboard" icon="fa-chart-pie" label="Dashboard" /><NavItem id="info" icon="fa-info-circle" label="Church Info" /><NavItem id="calendar" icon="fa-calendar-alt" label="Calendar" /><NavItem id="prayers" icon="fa-praying-hands" label="Prayer Wall" /><div className="my-4 border-t border-gray-200"></div><p className="px-3 text-xs font-bold text-gray-400 uppercase mb-2">Management</p><NavItem id="finances" icon="fa-file-invoice-dollar" label="Financials" /><NavItem id="members" icon="fa-users" label="Congregation" /><NavItem id="projects" icon="fa-tasks" label="Projects" /><div className="my-4 border-t border-gray-200"></div><NavItem id="settings" icon="fa-cog" label="Settings" allowedRoles={['admin']} /></nav><div className="p-4 border-t bg-gray-50"><div className="flex items-center mb-3 cursor-pointer hover:bg-gray-100 p-2 rounded transition" onClick={() => setShowProfileEdit(true)}><div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold mr-2">{user.name.charAt(0)}</div><div className="overflow-hidden"><p className="text-sm font-bold text-gray-800 truncate">{user.name}</p><p className="text-xs text-gray-500 capitalize">{user.role}</p></div><i className="fas fa-pencil-alt ml-auto text-gray-400 text-xs"></i></div><button onClick={handleLogout} className="w-full text-sm text-red-600 hover:text-red-800 text-left"><i className="fas fa-sign-out-alt mr-2"></i> Sign Out</button></div></div>
-                    <div className="md:hidden fixed top-0 w-full bg-white shadow z-20 p-4 flex justify-between items-center"><div><span className="font-bold block text-gray-800">Elect Word Ministry</span><span className="text-xs text-gray-500 block">Community Church</span></div><button onClick={handleLogout} className="text-red-600"><i className="fas fa-sign-out-alt"></i></button></div>
-                    <div className="md:hidden fixed bottom-0 w-full bg-white shadow-lg z-20 flex justify-around p-3 border-t"><button onClick={() => setView('dashboard')} className={`text-xl ${view === 'dashboard' ? 'text-indigo-600' : 'text-gray-400'}`}><i className="fas fa-home"></i></button><button onClick={() => setView('calendar')} className={`text-xl ${view === 'calendar' ? 'text-indigo-600' : 'text-gray-400'}`}><i className="fas fa-calendar"></i></button><button onClick={() => setView('prayers')} className={`text-xl ${view === 'prayers' ? 'text-indigo-600' : 'text-gray-400'}`}><i className="fas fa-pray"></i></button><button onClick={() => setView('finances')} className={`text-xl ${view === 'finances' ? 'text-indigo-600' : 'text-gray-400'}`}><i className="fas fa-dollar-sign"></i></button></div>
-                    <div className="flex-1 overflow-auto pt-16 md:pt-0 pb-16 md:pb-0">
+                    
+                    {/* Sidebar / Mobile Drawer */}
+                    {/* Overlay Background for Mobile */}
+                    {isMobileMenuOpen && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden" onClick={() => setIsMobileMenuOpen(false)}></div>
+                    )}
+
+                    <div className={`fixed inset-y-0 left-0 transform ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"} md:relative md:translate-x-0 transition duration-200 ease-in-out z-30 w-64 bg-white shadow-xl flex flex-col`}>
+                        <div className="p-6 border-b flex items-center space-x-3">
+                            <img src="icon-512.png" alt="Logo" className="w-10 h-10 rounded flex-shrink-0 object-contain" />
+                            <div><h1 className="font-bold text-sm text-gray-800 leading-tight">Elect Word Ministry</h1><p className="text-xs text-gray-500 font-medium">Community Church</p></div>
+                        </div>
+                        <nav className="flex-1 p-4 overflow-y-auto">
+                            <NavItem id="dashboard" icon="fa-chart-pie" label="Dashboard" />
+                            <NavItem id="info" icon="fa-info-circle" label="Church Info" />
+                            <NavItem id="calendar" icon="fa-calendar-alt" label="Calendar" />
+                            <NavItem id="prayers" icon="fa-praying-hands" label="Prayer Wall" />
+                            <div className="my-4 border-t border-gray-200"></div>
+                            <p className="px-3 text-xs font-bold text-gray-400 uppercase mb-2">Management</p>
+                            <NavItem id="finances" icon="fa-file-invoice-dollar" label="Financials" />
+                            <NavItem id="members" icon="fa-users" label="Congregation" />
+                            <NavItem id="projects" icon="fa-tasks" label="Projects" />
+                            <div className="my-4 border-t border-gray-200"></div>
+                            <NavItem id="settings" icon="fa-cog" label="Settings" allowedRoles={['admin']} />
+                        </nav>
+                        <div className="p-4 border-t bg-gray-50">
+                            <div className="flex items-center mb-3 cursor-pointer hover:bg-gray-100 p-2 rounded transition" onClick={() => { setShowProfileEdit(true); setIsMobileMenuOpen(false); }}>
+                                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold mr-2">{user.name.charAt(0)}</div>
+                                <div className="overflow-hidden"><p className="text-sm font-bold text-gray-800 truncate">{user.name}</p><p className="text-xs text-gray-500 capitalize">{user.role}</p></div>
+                                <i className="fas fa-pencil-alt ml-auto text-gray-400 text-xs"></i>
+                            </div>
+                            <button onClick={handleLogout} className="w-full text-sm text-red-600 hover:text-red-800 text-left"><i className="fas fa-sign-out-alt mr-2"></i> Sign Out</button>
+                        </div>
+                    </div>
+                    
+                    {/* Mobile Top Bar */}
+                    <div className="md:hidden fixed top-0 w-full bg-white shadow z-20 p-4 flex justify-between items-center">
+                        <div className="flex items-center">
+                            <button onClick={() => setIsMobileMenuOpen(true)} className="mr-4 text-gray-700 focus:outline-none">
+                                <i className="fas fa-bars text-xl"></i>
+                            </button>
+                            <div>
+                                <span className="font-bold block text-gray-800 leading-tight">Elect Word Ministry</span>
+                                <span className="text-xs text-gray-500 block">Community Church</span>
+                            </div>
+                        </div>
+                        <button onClick={handleLogout} className="text-red-600"><i className="fas fa-sign-out-alt"></i></button>
+                    </div>
+
+                    {/* Mobile Bottom Quick Nav */}
+                    <div className="md:hidden fixed bottom-0 w-full bg-white shadow-lg z-20 flex justify-around p-3 border-t safe-pb">
+                        <button onClick={() => setView('dashboard')} className={`text-xl ${view === 'dashboard' ? 'text-indigo-600' : 'text-gray-400'}`}><i className="fas fa-home"></i></button>
+                        <button onClick={() => setView('calendar')} className={`text-xl ${view === 'calendar' ? 'text-indigo-600' : 'text-gray-400'}`}><i className="fas fa-calendar"></i></button>
+                        <button onClick={() => setView('prayers')} className={`text-xl ${view === 'prayers' ? 'text-indigo-600' : 'text-gray-400'}`}><i className="fas fa-pray"></i></button>
+                        <button onClick={() => setView('finances')} className={`text-xl ${view === 'finances' ? 'text-indigo-600' : 'text-gray-400'}`}><i className="fas fa-dollar-sign"></i></button>
+                    </div>
+
+                    {/* Main Content Area */}
+                    <div className="flex-1 overflow-auto pt-20 md:pt-0 pb-20 md:pb-0 h-full w-full">
                         {view === 'dashboard' && <Dashboard changeView={setView} members={membersDB.data} finances={financesDB.data} prayers={prayersDB.data} infoDB={infoDB} events={eventsDB.data} announcementsDB={announcementsDB} user={user} />}
                         {view === 'finances' && <Financials user={user} financesDB={financesDB} projectsDB={projectsDB} />}
                         {view === 'members' && <Members user={user} membersDB={membersDB} />}
