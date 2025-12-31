@@ -35,8 +35,7 @@
         body { 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
             background-color: #f3f4f6;
-            overscroll-behavior-y: none; /* Prevents pull-to-refresh on mobile */
-            /* Prevent text selection and hold-to-copy on mobile */
+            overscroll-behavior-y: none;
             -webkit-user-select: none;
             -moz-user-select: none;
             -ms-user-select: none;
@@ -44,7 +43,6 @@
             -webkit-touch-callout: none;
         }
 
-        /* Re-enable select for inputs so users can type/edit */
         input, textarea, select, .selectable {
             -webkit-user-select: text;
             -moz-user-select: text;
@@ -55,7 +53,6 @@
         .sidebar-link.active { background-color: #4f46e5; color: white; }
         .sidebar-link:hover:not(.active) { background-color: #e0e7ff; color: #4338ca; }
         
-        /* Custom Scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; }
         ::-webkit-scrollbar-thumb { background: #c7c7c7; border-radius: 4px; }
@@ -69,7 +66,6 @@
         .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
         .mobile-sidebar { transition: transform 0.3s ease-in-out; }
 
-        /* Print Styles */
         @media print {
             .no-print { display: none !important; }
             .print-only { display: block !important; }
@@ -223,7 +219,6 @@
             return { data, loading, error, add, update, remove, setDoc };
         };
 
-        // --- UPDATED UTILS: Philippines & 12-Hour Format ---
         const formatCurrency = (amount) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount);
         
         const formatDate = (dateStr) => {
@@ -235,7 +230,7 @@
             if (!time24) return '';
             const [hours, minutes] = time24.split(':').map(Number);
             const period = hours >= 12 ? 'PM' : 'AM';
-            const hours12 = hours % 12 || 12; // Convert 0 to 12
+            const hours12 = hours % 12 || 12; 
             return `${hours12}:${minutes.toString().padStart(2, '0')} ${period}`;
         };
 
@@ -431,92 +426,26 @@
             );
         };
 
-        const Dashboard = ({ changeView, members, finances, prayers, infoDB, events, announcementsDB, user }) => {
-            const [localInfo, setLocalInfo] = useState(INITIAL_INFO);
-            const [countdown, setCountdown] = useState(null);
-            const [showAnnounceModal, setShowAnnounceModal] = useState(false);
-            const [newAnnouncement, setNewAnnouncement] = useState({ title: '', content: '' });
-            const [confirm, setConfirm] = useState({ isOpen: false, msg: '', action: null });
-
-            const announcements = useMemo(() => (announcementsDB.data || []).sort((a, b) => new Date(b.date) - new Date(a.date)), [announcementsDB.data]);
-            const canPostAnnouncement = user.role === 'admin' || (user.positions && user.positions.includes('Pastor'));
-
-            useEffect(() => { const doc = infoDB.data.find(d => d.id === 'main'); if (doc) setLocalInfo(doc); }, [infoDB.data]);
-
-            // UPDATED VERSE LOGIC: Deterministic Daily Verse
-            const verse = useMemo(() => {
-                const VERSES = [
-                    { text: "For I know the plans I have for you, declares the LORD, plans for welfare and not for evil, to give you a future and a hope.", ref: "Jeremiah 29:11" },
-                    { text: "I can do all things through him who strengthens me.", ref: "Philippians 4:13" },
-                    { text: "Trust in the LORD with all your heart, and do not lean on your own understanding.", ref: "Proverbs 3:5" },
-                    { text: "The LORD is my shepherd; I shall not want.", ref: "Psalm 23:1" },
-                    { text: "But they who wait for the LORD shall renew their strength; they shall mount up with wings like eagles...", ref: "Isaiah 40:31" },
-                    { text: "Be strong and courageous. Do not be frightened, and do not be dismayed, for the LORD your God is with you wherever you go.", ref: "Joshua 1:9" },
-                    { text: "And we know that for those who love God all things work together for good...", ref: "Romans 8:28" },
-                    { text: "The LORD is my light and my salvation; whom shall I fear?", ref: "Psalm 27:1" },
-                    { text: "Cast all your anxiety on him because he cares for you.", ref: "1 Peter 5:7" },
-                    { text: "This is the day that the LORD has made; let us rejoice and be glad in it.", ref: "Psalm 118:24" }
-                ];
-                const now = new Date();
-                const start = new Date(now.getFullYear(), 0, 0);
-                const diff = now - start;
-                const oneDay = 1000 * 60 * 60 * 24;
-                const day = Math.floor(diff / oneDay);
-                return VERSES[day % VERSES.length];
-            }, []);
-
-            useEffect(() => {
-                const calculateNext = () => {
-                    const now = new Date();
-                    let nextTime = null;
-                    let title = "";
-                    const serviceTimes = Array.isArray(localInfo.serviceTimes) ? localInfo.serviceTimes : [];
-                    serviceTimes.forEach(st => {
-                        const dayIndex = DAYS_OF_WEEK.indexOf(st.day);
-                        if (dayIndex === -1) return;
-                        const [hours, minutes] = st.time.split(':').map(Number);
-                        let date = new Date(now);
-                        date.setDate(now.getDate() + ((dayIndex + 7 - now.getDay()) % 7));
-                        date.setHours(hours, minutes, 0, 0);
-                        if (date <= now) date.setDate(date.getDate() + 7);
-                        if (!nextTime || date < nextTime) { nextTime = date; title = `${st.day} Service`; }
-                    });
-                    events.forEach(ev => {
-                        if (ev.type === 'Meeting') return;
-                        const evDate = new Date(`${ev.startDate}T${ev.time}`);
-                        if (evDate > now) { if (!nextTime || evDate < nextTime) { nextTime = evDate; title = ev.title; } }
-                    });
-                    if (nextTime) {
-                        const diff = nextTime - now;
-                        setCountdown({ title, days: Math.floor(diff / 86400000), hours: Math.floor((diff % 86400000) / 3600000), mins: Math.floor((diff % 3600000) / 60000) });
-                    } else setCountdown(null);
-                };
-                calculateNext();
-                const timer = setInterval(calculateNext, 60000);
-                return () => clearInterval(timer);
-            }, [localInfo, events]);
-
-            const handleAddAnnouncement = (e) => { e.preventDefault(); setConfirm({ isOpen: true, msg: 'Post announcement?', action: () => announcementsDB.add({ ...newAnnouncement, date: new Date().toISOString(), author: user.name }).then(() => { setShowAnnounceModal(false); setNewAnnouncement({ title: '', content: '' }); }) }); };
-            const handleDeleteAnnouncement = (id) => setConfirm({ isOpen: true, msg: 'Delete announcement?', action: () => announcementsDB.remove(id) });
-            
+        // --- DASHBOARD (REVERTED TO TURN 11 STATE) ---
+        const Dashboard = ({ changeView, members, finances, prayers }) => {
             const totalIncome = finances.filter(f => f.type === 'income').reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
             const totalExpense = finances.filter(f => f.type === 'expense').reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
-            const generalBalance = finances.filter(f => f.department === 'General Offering' && f.type === 'income').reduce((acc, c) => acc + parseFloat(c.amount), 0) - finances.filter(f => f.department === 'General Offering' && f.type === 'expense').reduce((acc, c) => acc + parseFloat(c.amount), 0);
-            const upcomingEvents = events.filter(e => new Date(e.startDate) >= new Date().setHours(0,0,0,0)).sort((a, b) => new Date(a.startDate) - new Date(b.startDate)).slice(0, 3);
-            
+            const totalBalance = totalIncome - totalExpense;
+
             return (
                 <div className="p-6">
-                    <ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} />
                     <h2 className="text-2xl font-bold mb-6 text-gray-800">Dashboard Overview</h2>
-                    {countdown && <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-lg shadow-lg p-6 mb-8 text-white flex flex-col md:flex-row items-center justify-between"><div><p className="text-indigo-100 text-sm font-bold uppercase tracking-wider mb-1">Up Next</p><h3 className="text-3xl font-bold">{countdown.title}</h3></div><div className="flex space-x-4 mt-4 md:mt-0 text-center"><div><span className="text-3xl font-bold block">{countdown.days}</span><span className="text-xs uppercase opacity-75">Days</span></div><div><span className="text-3xl font-bold block">{countdown.hours}</span><span className="text-xs uppercase opacity-75">Hrs</span></div><div><span className="text-3xl font-bold block">{countdown.mins}</span><span className="text-xs uppercase opacity-75">Mins</span></div></div></div>}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-indigo-500 cursor-pointer hover:shadow-lg transition" onClick={() => changeView('members')}><div className="flex justify-between items-center"><div><p className="text-gray-500 text-sm font-bold uppercase">Congregation</p><h3 className="text-2xl font-bold">{members.length} Members</h3></div><div className="bg-indigo-100 p-3 rounded-full text-indigo-600"><i className="fas fa-users text-xl"></i></div></div></div>
-                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500 cursor-pointer hover:shadow-lg transition" onClick={() => changeView('finances')}><div className="flex justify-between items-center"><div><p className="text-gray-500 text-sm font-bold uppercase">General Offering</p><h3 className="text-2xl font-bold text-green-600">{formatCurrency(generalBalance)}</h3></div><div className="bg-green-100 p-3 rounded-full text-green-600"><i className="fas fa-hand-holding-heart text-xl"></i></div></div></div>
-                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-yellow-500 cursor-pointer hover:shadow-lg transition" onClick={() => changeView('prayers')}><div className="flex justify-between items-center"><div><p className="text-gray-500 text-sm font-bold uppercase">Prayer Wall</p><h3 className="text-2xl font-bold">{prayers.filter(p => p.status === 'Open').length} Active</h3></div><div className="bg-yellow-100 p-3 rounded-full text-yellow-600"><i className="fas fa-pray text-xl"></i></div></div></div>
+                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-indigo-500 cursor-pointer hover:shadow-lg" onClick={() => changeView('members')}>
+                            <div className="flex justify-between items-center"><div><p className="text-gray-500 text-sm">Total Members</p><h3 className="text-2xl font-bold">{members.length}</h3></div><i className="fas fa-users text-indigo-200 text-3xl"></i></div>
+                        </div>
+                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500 cursor-pointer hover:shadow-lg" onClick={() => changeView('finances')}>
+                            <div className="flex justify-between items-center"><div><p className="text-gray-500 text-sm">Total Funds</p><h3 className="text-2xl font-bold text-green-600">{formatCurrency(totalBalance)}</h3></div><i className="fas fa-hand-holding-usd text-green-200 text-3xl"></i></div>
+                        </div>
+                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-yellow-500 cursor-pointer hover:shadow-lg" onClick={() => changeView('prayers')}>
+                            <div className="flex justify-between items-center"><div><p className="text-gray-500 text-sm">Prayer Requests</p><h3 className="text-2xl font-bold">{prayers.filter(p => p.status === 'Open').length} Open</h3></div><i className="fas fa-pray text-yellow-200 text-3xl"></i></div>
+                        </div>
                     </div>
-                    <div className="mb-8"><div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold text-gray-800">Latest Announcements</h3>{canPostAnnouncement && <button onClick={() => setShowAnnounceModal(true)} className="bg-indigo-600 text-white px-4 py-2 rounded text-sm hover:bg-indigo-700"><i className="fas fa-bullhorn mr-2"></i> Post Announcement</button>}</div><div className="grid grid-cols-1 gap-4">{announcements.length === 0 ? <div className="bg-white p-6 rounded-lg shadow text-center text-gray-500 italic">No announcements at this time.</div> : announcements.map(ann => (<div key={ann.id} className="bg-white p-6 rounded-lg shadow border-l-4 border-orange-500 relative group">{canPostAnnouncement && <button onClick={() => handleDeleteAnnouncement(ann.id)} className="absolute top-2 right-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition"><i className="fas fa-trash"></i></button>}<div className="flex justify-between items-start mb-2"><h4 className="font-bold text-lg text-gray-800">{ann.title}</h4><span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">{formatDate(ann.date)}</span></div><p className="text-gray-600 whitespace-pre-wrap">{ann.content}</p><p className="text-xs text-gray-400 mt-3 font-medium">Posted by: {ann.author}</p></div>))}</div></div>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6"><div className="bg-white rounded-lg shadow p-6"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-800">Upcoming Events</h3><button onClick={() => changeView('calendar')} className="text-indigo-600 text-sm hover:underline">View Calendar</button></div>{upcomingEvents.length === 0 ? <p className="text-gray-500 text-sm italic">No upcoming events scheduled.</p> : <div className="space-y-3">{upcomingEvents.map(ev => (<div key={ev.id} className="flex items-center p-3 bg-gray-50 rounded hover:bg-gray-100 transition cursor-pointer" onClick={() => changeView('calendar')}><div className="text-center mr-4 min-w-[50px]"><div className="text-xs font-bold text-red-500 uppercase">{new Date(ev.startDate).toLocaleString('default', { month: 'short' })}</div><div className="text-xl font-bold text-gray-800">{new Date(ev.startDate).getDate()}</div></div><div><h4 className="font-bold text-sm text-gray-800">{ev.title}</h4><p className="text-xs text-gray-500">{formatTime12(ev.time)} • {ev.type}</p></div></div>))}</div>}</div><div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg shadow p-6 text-white flex flex-col justify-center text-center"><h3 className="text-indigo-100 text-xs font-bold uppercase tracking-widest mb-4">Verse of the Day</h3><p className="text-lg font-serif italic mb-4">"{verse.text}"</p><p className="text-sm font-bold">— {verse.ref}</p></div></div>
-                    {showAnnounceModal && <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white p-6 rounded-lg w-full max-w-lg"><h3 className="text-xl font-bold mb-4">New Announcement</h3><form onSubmit={handleAddAnnouncement}><div className="mb-3"><label className="block text-xs font-bold text-gray-500 mb-1">Title</label><input className="w-full border p-2 rounded" required value={newAnnouncement.title} onChange={e => setNewAnnouncement({...newAnnouncement, title: e.target.value})} placeholder="e.g. Prayer Meeting Change" /></div><div className="mb-4"><label className="block text-xs font-bold text-gray-500 mb-1">Content</label><textarea className="w-full border p-2 rounded" rows="4" required value={newAnnouncement.content} onChange={e => setNewAnnouncement({...newAnnouncement, content: e.target.value})} placeholder="Details here..." /></div><div className="flex justify-end space-x-2"><button type="button" onClick={() => setShowAnnounceModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Post</button></div></form></div></div>}
                 </div>
             );
         };
@@ -554,7 +483,7 @@
             const triggerSubmit = (e) => { e.preventDefault(); const action = editingId ? "Update" : "Add"; setConfirm({ isOpen: true, msg: `${action} this member?`, action: () => { if (editingId) { membersDB.update(editingId, form).then(resetForm); } else { membersDB.add(form).then(resetForm); } }}); };
             const groupedMembers = useMemo(() => { const groups = {}; Object.keys(CHURCH_STRUCTURE).forEach(dept => groups[dept] = []); groups["General Congregation"] = []; const PRIORITY_ORDER = ["Church Leadership", "Music Department", "Youth Department", "Men's Department", "Women's Department", "Tech Team"]; members.forEach(m => { let assigned = false; const memberRoles = m.roles || []; for (const dept of PRIORITY_ORDER) { const roles = CHURCH_STRUCTURE[dept]; if (memberRoles.some(r => roles.includes(r))) { groups[dept].push(m); assigned = true; break; } } if (!assigned) groups["General Congregation"].push(m); }); return groups; }, [members]);
 
-            return (<div className="p-6"><ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} /><div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-gray-800">Congregation Directory</h2>{user.role === 'admin' && <button onClick={() => { resetForm(); setShowModal(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"><i className="fas fa-plus mr-2"></i> Add Member</button>}</div><div className="space-y-8">{Object.entries(groupedMembers).map(([dept, deptMembers]) => (deptMembers.length > 0 && (<div key={dept}><h3 className="text-lg font-bold text-indigo-800 border-b border-indigo-200 pb-2 mb-4 uppercase tracking-wide">{dept}</h3><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{deptMembers.map(m => (<div key={m.id} className="bg-white p-4 rounded-lg shadow flex items-start space-x-4 relative group">{user.role === 'admin' && (<div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition z-10 bg-white rounded p-1"><button onClick={() => handleEdit(m)} className="text-blue-500 hover:text-blue-700"><i className="fas fa-edit"></i></button><button onClick={() => triggerDelete(m.id)} className="text-red-500 hover:text-red-700"><i className="fas fa-trash"></i></button></div>)}<div className="bg-indigo-100 rounded-full w-12 h-12 flex items-center justify-center text-indigo-600 font-bold text-xl flex-shrink-0">{m.name.charAt(0)}</div><div className="flex-1 min-w-0"><div className="flex justify-between items-start"><h3 className="font-bold text-gray-800 truncate">{m.name}</h3></div><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${m.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{m.status}</span>{m.roles && m.roles.length > 0 && <div className="flex flex-wrap gap-1 mt-1 mb-2">{m.roles.map((r,i) => <span key={i} className="bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded text-[10px]">{r}</span>)}</div>}{isLeadership(user) ? <><p className="text-sm text-gray-500 truncate"><i className="fas fa-envelope w-4"></i> {m.email || 'N/A'}</p><p className="text-sm text-gray-500 truncate"><i className="fas fa-phone w-4"></i> {m.phone || 'N/A'}</p><p className="text-sm text-gray-500 truncate"><i className="fas fa-home w-4"></i> {m.address || 'N/A'}</p></> : <p className="text-xs text-gray-400 italic mt-2">Contact details hidden</p>}</div></div>))}</div></div>)))}</div>{showModal && <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white p-6 rounded-lg w-full max-w-lg overflow-y-auto"><h3 className="text-xl font-bold mb-4">{editingId ? 'Edit Member' : 'Add New Member'}</h3><form onSubmit={triggerSubmit}><div className="space-y-3"><input className="w-full border p-2 rounded" placeholder="Full Name" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} /><select className="w-full border p-2 rounded" value={form.status} onChange={e => setForm({...form, status: e.target.value})}><option>Active</option><option>Visitor</option><option>Inactive</option></select><input className="w-full border p-2 rounded" placeholder="Email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} /><input className="w-full border p-2 rounded" placeholder="Phone" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /><input className="w-full border p-2 rounded" placeholder="Address" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div><div className="mt-4 flex justify-end space-x-2"><button type="button" onClick={resetForm} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">{editingId ? 'Update' : 'Save'} Member</button></div></form></div></div>}</div>);
+            return (<div className="p-6"><ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} /><div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-gray-800">Congregation Directory</h2>{user.role === 'admin' && <button onClick={() => { resetForm(); setShowModal(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"><i className="fas fa-plus mr-2"></i> Add Member</button>}</div><div className="space-y-8">{Object.entries(groupedMembers).map(([dept, deptMembers]) => (deptMembers.length > 0 && (<div key={dept}><h3 className="text-lg font-bold text-indigo-800 border-b border-indigo-200 pb-2 mb-4 uppercase tracking-wide">{dept}</h3><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{deptMembers.map(m => (<div key={m.id} className="bg-white p-4 rounded-lg shadow flex items-start space-x-4 relative group">{user.role === 'admin' && (<div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition z-10 bg-white rounded p-1"><button onClick={() => handleEdit(m)} className="text-blue-500 hover:text-blue-700"><i className="fas fa-edit"></i></button><button onClick={() => triggerDelete(m.id)} className="text-red-500 hover:text-red-700"><i className="fas fa-trash"></i></button></div>)}<div className="bg-indigo-100 rounded-full w-12 h-12 flex items-center justify-center text-indigo-600 font-bold text-xl flex-shrink-0">{m.name.charAt(0)}</div><div className="flex-1 min-w-0"><div className="flex justify-between items-start"><h3 className="font-bold text-gray-800 truncate">{m.name}</h3></div><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${m.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{m.status}</span>{m.roles && m.roles.length > 0 && <div className="flex flex-wrap gap-1 mt-1 mb-2">{m.roles.map((r,i) => <span key={i} className="bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded text-[10px]">{r}</span>)}</div>}{isLeadership(user) ? <><a href={`mailto:${m.email}`} className="text-sm text-gray-500 truncate block hover:text-indigo-600"><i className="fas fa-envelope w-4"></i> {m.email || 'N/A'}</a><a href={`tel:${m.phone}`} className="text-sm text-gray-500 truncate block hover:text-indigo-600"><i className="fas fa-phone w-4"></i> {m.phone || 'N/A'}</a><a href={`https://maps.google.com/?q=${encodeURIComponent(m.address)}`} target="_blank" className="text-sm text-gray-500 truncate block hover:text-indigo-600"><i className="fas fa-home w-4"></i> {m.address || 'N/A'}</a></> : <p className="text-xs text-gray-400 italic mt-2">Contact details hidden</p>}</div></div>))}</div></div>)))}</div>{showModal && <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white p-6 rounded-lg w-full max-w-lg overflow-y-auto"><h3 className="text-xl font-bold mb-4">{editingId ? 'Edit Member' : 'Add New Member'}</h3><form onSubmit={triggerSubmit}><div className="space-y-3"><input className="w-full border p-2 rounded" placeholder="Full Name" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} /><select className="w-full border p-2 rounded" value={form.status} onChange={e => setForm({...form, status: e.target.value})}><option>Active</option><option>Visitor</option><option>Inactive</option></select><input className="w-full border p-2 rounded" placeholder="Email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} /><input className="w-full border p-2 rounded" placeholder="Phone" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /><input className="w-full border p-2 rounded" placeholder="Address" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div><div className="mt-4 flex justify-end space-x-2"><button type="button" onClick={resetForm} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">{editingId ? 'Update' : 'Save'} Member</button></div></form></div></div>}</div>);
         };
 
         const PrayerWall = ({ user, prayersDB }) => { /* ... (Same as previous PrayerWall component, condensed) */ 
@@ -627,32 +556,7 @@
             const removeService = (index) => { const updated = [...(localInfo.serviceTimes || [])]; updated.splice(index, 1); setLocalInfo({...localInfo, serviceTimes: updated}); };
             const renderContent = () => {
                 switch(activeTab) {
-                    case 'about': return <div className="space-y-4"><div className="mb-4 text-center">{localInfo.churchImage ? <img src={localInfo.churchImage} alt="Church" className="w-full h-48 object-cover rounded-lg shadow-md mb-2" /> : <div className="w-full h-48 bg-gray-200 rounded-lg flex items-center justify-center text-gray-500 mb-2"><i className="fas fa-church text-4xl"></i></div>}{isEditing && <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'churchImage')} className="text-xs" />}</div><div><label className="block text-xs font-bold text-gray-500">Name</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.name} onChange={e => setLocalInfo({...localInfo, name: e.target.value})} /> : <p className="text-lg font-medium">{localInfo.name}</p>}</div><div><label className="block text-xs font-bold text-gray-500">Address</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.address} onChange={e => setLocalInfo({...localInfo, address: e.target.value})} /> : <p>{localInfo.address}</p>}</div><div><label className="block text-xs font-bold text-gray-500">Phone</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.phone} onChange={e => setLocalInfo({...localInfo, phone: e.target.value})} /> : <p>{localInfo.phone}</p>}</div>
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 mb-2">Service Times</label>
-                            {isEditing ? (
-                                <div className="bg-gray-50 p-2 rounded">
-                                    <div className="flex gap-2 mb-2">
-                                        <select className="border p-1 rounded" value={newService.day} onChange={e => setNewService({...newService, day: e.target.value})}>{DAYS_OF_WEEK.map(d => <option key={d}>{d}</option>)}</select>
-                                        <input type="time" className="border p-1 rounded" value={newService.time} onChange={e => setNewService({...newService, time: e.target.value})} />
-                                        <button onClick={addService} className="bg-blue-500 text-white px-2 rounded text-xs">Add</button>
-                                    </div>
-                                    <ul>
-                                        {(Array.isArray(localInfo.serviceTimes) ? localInfo.serviceTimes : []).map((s, i) => (
-                                            <li key={i} className="flex justify-between text-sm border-b py-1">
-                                                <span>{s.day} @ {formatTime12(s.time)}</span>
-                                                <button onClick={() => removeService(i)} className="text-red-500 text-xs">Remove</button>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            ) : (
-                                <ul className="list-disc ml-4 text-sm text-gray-700">
-                                    {(Array.isArray(localInfo.serviceTimes) ? localInfo.serviceTimes : []).map((s, i) => <li key={i}>{s.day}s at {formatTime12(s.time)}</li>)}
-                                </ul>
-                            )}
-                        </div>
-                    </div>;
+                    case 'about': return <div className="space-y-4"><div className="mb-4 text-center">{localInfo.churchImage ? <img src={localInfo.churchImage} alt="Church" className="w-full h-48 object-cover rounded-lg shadow-md mb-2" /> : <div className="w-full h-48 bg-gray-200 rounded-lg flex items-center justify-center text-gray-500 mb-2"><i className="fas fa-church text-4xl"></i></div>}{isEditing && <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'churchImage')} className="text-xs" />}</div><div><label className="block text-xs font-bold text-gray-500">Name</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.name} onChange={e => setLocalInfo({...localInfo, name: e.target.value})} /> : <p className="text-lg font-medium">{localInfo.name}</p>}</div><div><label className="block text-xs font-bold text-gray-500">Address</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.address} onChange={e => setLocalInfo({...localInfo, address: e.target.value})} /> : <p>{localInfo.address}</p>}</div><div><label className="block text-xs font-bold text-gray-500">Phone</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.phone} onChange={e => setLocalInfo({...localInfo, phone: e.target.value})} /> : <p>{localInfo.phone}</p>}</div><div><label className="block text-xs font-bold text-gray-500 mb-2">Service Times</label>{isEditing ? (<div className="bg-gray-50 p-2 rounded"><div className="flex gap-2 mb-2"><select className="border p-1 rounded" value={newService.day} onChange={e => setNewService({...newService, day: e.target.value})}>{DAYS_OF_WEEK.map(d => <option key={d}>{d}</option>)}</select><input type="time" className="border p-1 rounded" value={newService.time} onChange={e => setNewService({...newService, time: e.target.value})} /><button onClick={addService} className="bg-blue-500 text-white px-2 rounded text-xs">Add</button></div><ul>{(Array.isArray(localInfo.serviceTimes) ? localInfo.serviceTimes : []).map((s, i) => (<li key={i} className="flex justify-between text-sm border-b py-1"><span>{s.day} @ {formatTime12(s.time)}</span><button onClick={() => removeService(i)} className="text-red-500 text-xs">Remove</button></li>))}</ul></div>) : (<ul className="list-disc ml-4 text-sm text-gray-700">{(Array.isArray(localInfo.serviceTimes) ? localInfo.serviceTimes : []).map((s, i) => <li key={i}>{s.day}s at {formatTime12(s.time)}</li>)}</ul>)}</div></div>;
                     case 'mission': return <div className="space-y-4"><div><label className="block text-xs font-bold text-gray-500">Mission</label>{isEditing ? <textarea className="w-full border p-2 rounded" rows="3" value={localInfo.mission} onChange={e => setLocalInfo({...localInfo, mission: e.target.value})} /> : <p className="italic">"{localInfo.mission}"</p>}</div><div><label className="block text-xs font-bold text-gray-500">Vision</label>{isEditing ? <textarea className="w-full border p-2 rounded" rows="3" value={localInfo.vision} onChange={e => setLocalInfo({...localInfo, vision: e.target.value})} /> : <p className="italic">"{localInfo.vision}"</p>}</div></div>;
                     case 'pastor': return <div className="space-y-4"><h3 className="font-bold">Our Senior Pastor</h3><div className="flex flex-col md:flex-row gap-4 items-start"><div className="w-full md:w-1/3">{localInfo.pastorImage ? <img src={localInfo.pastorImage} alt="Pastor" className="w-full h-auto rounded-lg shadow-md mb-2" /> : <div className="w-full h-48 bg-gray-200 rounded-lg flex items-center justify-center text-gray-500 mb-2"><i className="fas fa-user text-4xl"></i></div>}{isEditing && <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'pastorImage')} className="text-xs w-full" />}</div><div className="w-full md:w-2/3">{isEditing ? <textarea className="w-full border p-2 rounded" rows="6" value={localInfo.pastorBio} onChange={e => setLocalInfo({...localInfo, pastorBio: e.target.value})} /> : <p className="whitespace-pre-wrap text-gray-700">{localInfo.pastorBio}</p>}</div></div></div>;
                     case 'location': return <div className="space-y-4"><div><label className="block text-xs font-bold text-gray-500">Address</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.address} onChange={e => setLocalInfo({...localInfo, address: e.target.value})} /> : <p>{localInfo.address}</p>}</div><div className="h-64 bg-gray-200 rounded overflow-hidden shadow-inner relative"><iframe width="100%" height="100%" frameBorder="0" style={{border:0}} src={`https://maps.google.com/maps?q=${encodeURIComponent(localInfo.address)}&t=&z=15&ie=UTF8&iwloc=&output=embed`} allowFullScreen></iframe></div><a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(localInfo.address)}`} target="_blank" className="block w-full text-center bg-blue-600 text-white py-2 rounded hover:bg-blue-700 font-bold transition"><i className="fas fa-directions mr-2"></i> Get Directions</a></div>;
@@ -815,7 +719,7 @@
                     </div>
 
                     {/* Main Content Area */}
-                    <div className="flex-1 overflow-auto pt-20 md:pt-0 pb-20 md:pb-0 h-full w-full main-content safe-pb">
+                    <div className="flex-1 overflow-auto pt-20 md:pt-0 pb-20 md:pb-0 h-full w-full main-content">
                         {view === 'dashboard' && <Dashboard changeView={setView} members={membersDB.data} finances={financesDB.data} prayers={prayersDB.data} infoDB={infoDB} events={eventsDB.data} announcementsDB={announcementsDB} user={user} />}
                         {view === 'finances' && <Financials user={user} financesDB={financesDB} projectsDB={projectsDB} />}
                         {view === 'members' && <Members user={user} membersDB={membersDB} />}
