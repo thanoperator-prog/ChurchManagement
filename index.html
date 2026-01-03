@@ -251,111 +251,6 @@
             );
         };
 
-        const Reports = ({ user, financesDB, projectsDB }) => {
-            const [config, setConfig] = useState({ department: DEPARTMENTS[0], period: 'Monthly', includeFinancials: true, includeProjects: true });
-            const [reportData, setReportData] = useState(null);
-            const accessibleDepts = useMemo(() => DEPARTMENTS.filter(d => getPermissions(user, d).view), [user]);
-
-            useEffect(() => { if(accessibleDepts.length > 0 && !accessibleDepts.includes(config.department)) setConfig(prev => ({ ...prev, department: accessibleDepts[0] })); }, [accessibleDepts]);
-
-            const generateReport = () => {
-                const now = new Date();
-                // Set end date to end of today
-                now.setHours(23, 59, 59, 999);
-                
-                let startDate = new Date();
-                // Set start date to beginning of the day
-                startDate.setHours(0, 0, 0, 0);
-
-                if (config.period === 'Weekly') {
-                    startDate.setDate(now.getDate() - 7);
-                } else if (config.period === 'Monthly') {
-                    startDate.setDate(1); // 1st of current month
-                } else if (config.period === 'Yearly') {
-                    startDate.setMonth(0, 1); // Jan 1st of current year
-                }
-                
-                const finances = (financesDB.data || []).filter(t => { 
-                    // Use dateCollected if available, fallback to date (legacy), fallback to dateInput
-                    const dateStr = t.dateCollected || t.date || t.dateInput;
-                    if (!dateStr) return false;
-                    
-                    const tDate = new Date(dateStr);
-                    // Normalize tDate to prevent timezone issues affecting comparison if only date part is stored
-                    tDate.setHours(12, 0, 0, 0); 
-                    
-                    // Create comparison dates
-                    const compStart = new Date(startDate);
-                    const compEnd = new Date(now);
-                    
-                    return t.department === config.department && tDate >= compStart && tDate <= compEnd; 
-                });
-                
-                const projects = (projectsDB.data || []).filter(p => p.department === config.department);
-                setReportData({ finances, projects, meta: { ...config, startDate, endDate: now } });
-            };
-            
-            const downloadPDF = () => {
-                const element = document.getElementById('printable-report');
-                const opt = {
-                    margin: 0.5,
-                    filename: `EWM_Report_${config.department}_${config.period}.pdf`,
-                    image: { type: 'jpeg', quality: 0.98 },
-                    html2canvas: { scale: 2 },
-                    jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-                };
-                if (window.html2pdf) {
-                    html2pdf().set(opt).from(element).save();
-                } else {
-                    alert("PDF Generator is loading. Please try again in a moment.");
-                }
-            };
-
-            if (accessibleDepts.length === 0) return <div className="p-6 text-center text-gray-500">Access Denied.</div>;
-
-            return (
-                <div className="p-6">
-                    {!reportData ? (
-                        <div className="bg-white p-6 rounded-lg shadow max-w-lg mx-auto mt-10">
-                            <h2 className="text-xl font-bold mb-4 text-gray-800 border-b pb-2">Generate Report</h2>
-                            <div className="space-y-4">
-                                <div><label className="block text-xs font-bold text-gray-500 mb-1">Department</label><select className="w-full border p-2 rounded" value={config.department} onChange={e => setConfig({...config, department: e.target.value})}>{accessibleDepts.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
-                                <div><label className="block text-xs font-bold text-gray-500 mb-1">Time Period</label><select className="w-full border p-2 rounded" value={config.period} onChange={e => setConfig({...config, period: e.target.value})}><option value="Weekly">Weekly (Last 7 Days)</option><option value="Monthly">Monthly (Current Month)</option><option value="Yearly">Yearly (Current Year)</option></select></div>
-                                <div className="flex gap-4"><label className="flex items-center text-sm"><input type="checkbox" className="mr-2" checked={config.includeFinancials} onChange={e => setConfig({...config, includeFinancials: e.target.checked})} /> Financials</label><label className="flex items-center text-sm"><input type="checkbox" className="mr-2" checked={config.includeProjects} onChange={e => setConfig({...config, includeProjects: e.target.checked})} /> Projects</label></div>
-                                <button onClick={generateReport} className="w-full bg-indigo-600 text-white py-2 rounded font-bold hover:bg-indigo-700">Generate Report</button>
-                            </div>
-                        </div>
-                    ) : (
-                        <div>
-                            <div className="bg-white p-8 rounded-lg shadow" id="printable-report">
-                                <div className="flex justify-between items-start mb-6 border-b pb-4">
-                                    <div><h1 className="text-2xl font-bold text-gray-800">Department Report</h1><p className="text-gray-500">{config.department} • {config.period}</p><p className="text-xs text-gray-400 mt-1">Generated: {new Date().toLocaleString('en-PH')}</p></div>
-                                </div>
-                                {config.includeFinancials && (
-                                    <div className="mb-8"><h3 className="text-lg font-bold text-gray-700 mb-3 uppercase tracking-wide">Financial Summary</h3>
-                                        <div className="grid grid-cols-3 gap-4 mb-4">
-                                            <div className="bg-gray-50 p-3 rounded"><span className="block text-xs text-gray-500">Income</span><span className="text-lg font-bold text-green-600">{formatCurrency(reportData.finances.filter(f => f.type === 'income').reduce((a,c) => a+parseFloat(c.amount), 0))}</span></div>
-                                            <div className="bg-gray-50 p-3 rounded"><span className="block text-xs text-gray-500">Expense</span><span className="text-lg font-bold text-red-600">{formatCurrency(reportData.finances.filter(f => f.type === 'expense').reduce((a,c) => a+parseFloat(c.amount), 0))}</span></div>
-                                            <div className="bg-gray-50 p-3 rounded"><span className="block text-xs text-gray-500">Net</span><span className="text-lg font-bold text-gray-800">{formatCurrency(reportData.finances.filter(f => f.type === 'income').reduce((a,c) => a+parseFloat(c.amount), 0) - reportData.finances.filter(f => f.type === 'expense').reduce((a,c) => a+parseFloat(c.amount), 0))}</span></div>
-                                        </div>
-                                        <table className="w-full text-left text-sm border"><thead className="bg-gray-100"><tr><th className="p-2 border">Collected</th><th className="p-2 border">Desc</th><th className="p-2 border text-right">Amount</th></tr></thead><tbody>{reportData.finances.map(t => (<tr key={t.id}><td className="p-2 border">{formatDate(t.dateCollected || t.date)}</td><td className="p-2 border">{t.description}</td><td className={`p-2 border text-right font-bold ${t.type==='income'?'text-green-600':'text-red-600'}`}>{t.type==='expense'?'-':''}{formatCurrency(t.amount)}</td></tr>))}{reportData.finances.length === 0 && <tr><td colSpan="3" className="p-4 text-center text-gray-500">No transactions in this period.</td></tr>}</tbody></table>
-                                    </div>
-                                )}
-                                {config.includeProjects && (
-                                    <div><h3 className="text-lg font-bold text-gray-700 mb-3 uppercase tracking-wide">Project Status</h3><div className="space-y-4">{reportData.projects.map(p => (<div key={p.id} className="border p-4 rounded flex justify-between items-center break-inside-avoid"><div><h4 className="font-bold">{p.name}</h4><span className="text-xs bg-gray-200 px-2 py-0.5 rounded">{p.status}</span></div><div className="text-right"><span className="block text-xs text-gray-500">Budget</span><span className="font-bold">{formatCurrency(p.budget || 0)}</span></div></div>))}{reportData.projects.length === 0 && <p className="text-gray-500 text-sm italic">No projects found.</p>}</div></div>
-                                )}
-                                <div className="mt-12 text-center text-xs text-gray-400 border-t pt-4">Report Generated by {user.name} on {new Date().toLocaleDateString('en-PH')} via Elect Word Ministry App</div>
-                            </div>
-                            <div className="mt-4 flex justify-between no-print max-w-4xl mx-auto">
-                                <button onClick={() => setReportData(null)} className="text-gray-500 hover:text-gray-700 underline text-sm">Back</button>
-                                <button onClick={downloadPDF} className="bg-gray-800 text-white px-6 py-2 rounded shadow hover:bg-black"><i className="fas fa-download mr-2"></i> Download PDF</button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            );
-        };
-
         const AttendeesModal = ({ isOpen, attendees, onClose }) => {
             if (!isOpen) return null;
             return (
@@ -591,30 +486,54 @@
         };
 
         const Financials = ({ user, financesDB, projectsDB }) => {
-            const transactions = financesDB.data;
+            // Deduplicate transactions to ensure unique keys
+            const transactions = useMemo(() => {
+                const seen = new Set();
+                return (financesDB.data || []).filter(t => {
+                    if (seen.has(t.id)) return false;
+                    seen.add(t.id);
+                    return true;
+                });
+            }, [financesDB.data]);
+
             const projects = projectsDB.data;
             
             const accessibleFunds = useMemo(() => DEPARTMENTS.filter(dept => getPermissions(user, dept).view), [user]);
+            // Add state for active tab
+            const [activeTab, setActiveTab] = useState('Overview');
             const [form, setForm] = useState({ department: '', projectId: '', amount: '', type: 'income', description: '', dateCollected: new Date().toISOString().split('T')[0] });
             const [editingId, setEditingId] = useState(null);
             const [confirm, setConfirm] = useState({ isOpen: false, msg: '', action: null });
 
+            // Report States
+            const [showReportConfig, setShowReportConfig] = useState(false);
+            const [reportPeriod, setReportPeriod] = useState('Monthly');
+            const [generatedReport, setGeneratedReport] = useState(null);
+
+            // Update form department when switching tabs
             useEffect(() => {
-                const manageable = accessibleFunds.find(d => getPermissions(user, d).manage);
-                if (manageable && !form.department) setForm(prev => ({ ...prev, department: manageable }));
-                else if (accessibleFunds.length > 0 && !form.department) setForm(prev => ({ ...prev, department: accessibleFunds[0] }));
-            }, [accessibleFunds, user]);
+                if (activeTab !== 'Overview') {
+                    setForm(prev => ({ ...prev, department: activeTab }));
+                    // Reset report view when switching tabs
+                    setShowReportConfig(false);
+                    setGeneratedReport(null);
+                } else {
+                    // Default to first manageable if in Overview
+                    const manageable = accessibleFunds.find(d => getPermissions(user, d).manage);
+                    if (manageable) setForm(prev => ({ ...prev, department: manageable }));
+                }
+            }, [activeTab, accessibleFunds, user]);
 
             const handleEdit = (t) => { 
-                // Populate form with existing data. Fallback to 'date' if 'dateCollected' is missing (for old records)
                 setForm({ ...t, dateCollected: t.dateCollected || t.date }); 
-                setEditingId(t.id); 
+                setEditingId(t.id);
                 window.scrollTo({ top: 0, behavior: 'smooth' }); 
             };
             
             const cancelEdit = () => { 
                 setEditingId(null); 
-                setForm({ ...form, amount: '', description: '', projectId: '', dateCollected: new Date().toISOString().split('T')[0] }); 
+                const defaultDept = activeTab !== 'Overview' ? activeTab : (accessibleFunds.find(d => getPermissions(user, d).manage) || '');
+                setForm({ ...form, department: defaultDept, amount: '', description: '', projectId: '', dateCollected: new Date().toISOString().split('T')[0] }); 
             };
 
             const triggerSubmit = (e) => {
@@ -622,16 +541,13 @@
                 const action = editingId ? "Update" : "Add";
                 setConfirm({ isOpen: true, msg: `${action} this transaction?`, action: () => {
                     if (editingId) {
-                        // For update, we preserve the original input date if it exists
                         financesDB.update(editingId, form).then(cancelEdit);
                     } else {
-                        // For add, we auto-generate the Input Date
                         const newTransaction = { 
                             ...form, 
                             dateInput: new Date().toISOString() 
                         };
                         financesDB.add(newTransaction).then(() => {
-                            // Clear form on success
                             setForm(prev => ({ 
                                 ...prev, 
                                 amount: '', 
@@ -658,48 +574,366 @@
                 return inc - exp;
             };
 
+            // Filter transactions based on active tab
             const visibleTransactions = transactions
                 .filter(t => accessibleFunds.includes(t.department))
-                .sort((a, b) => new Date(b.dateCollected || b.dateInput || b.date) - new Date(a.dateCollected || a.dateInput || a.date))
-                .reverse(); // Newest first
+                .filter(t => activeTab === 'Overview' || t.department === activeTab)
+                .sort((a, b) => new Date(b.dateCollected || b.dateInput || b.date) - new Date(a.dateCollected || a.dateInput || a.date)); 
                 
             const availableProjects = projects.filter(p => p.department === form.department && p.status !== 'Completed');
-            const canManageCurrentFund = getPermissions(user, form.department).manage;
+            
+            const canManageCurrentFund = form.department && getPermissions(user, form.department).manage;
+
+            // --- REPORT GENERATION LOGIC ---
+            const generateReport = () => {
+                const now = new Date();
+                now.setHours(23, 59, 59, 999);
+                
+                let startDate = new Date();
+                startDate.setHours(0, 0, 0, 0);
+
+                if (reportPeriod === 'Weekly') {
+                    startDate.setDate(now.getDate() - 7);
+                } else if (reportPeriod === 'Monthly') {
+                    startDate.setDate(1); // 1st of current month
+                } else if (reportPeriod === 'Last Month') {
+                    startDate.setMonth(startDate.getMonth() - 1, 1); // 1st of last month
+                    now.setDate(0); // Last day of previous month
+                    now.setHours(23, 59, 59, 999);
+                } else if (reportPeriod === 'Yearly') {
+                    startDate.setMonth(0, 1); // Jan 1st of current year
+                } else if (reportPeriod === 'All Time') {
+                    startDate = new Date(0); // Epoch start (1970)
+                }
+
+                // Filter transactions for active tab and date range
+                const fundTrans = transactions.filter(t => {
+                    if (t.department !== activeTab) return false;
+                    
+                    // If All Time, skip date check
+                    if (reportPeriod === 'All Time') return true;
+
+                    const dateStr = t.dateCollected || t.date || t.dateInput;
+                    if (!dateStr) return false;
+                    
+                    let tDate;
+                    if (dateStr.length === 10 && dateStr.charAt(4) === '-') {
+                        const [y, m, d] = dateStr.split('-').map(Number);
+                        tDate = new Date(y, m - 1, d); 
+                    } else {
+                        tDate = new Date(dateStr);
+                    }
+                    tDate.setHours(0,0,0,0);
+                    
+                    const compStart = new Date(startDate); compStart.setHours(0,0,0,0);
+                    const compEnd = new Date(now); compEnd.setHours(23,59,59,999);
+
+                    return tDate >= compStart && tDate <= compEnd;
+                });
+
+                // Group by Month
+                const grouped = {};
+                fundTrans.forEach(t => {
+                    const dateStr = t.dateCollected || t.date || t.dateInput;
+                    let date;
+                    if (dateStr && dateStr.length === 10 && dateStr.charAt(4) === '-') {
+                        const [y, m, d] = dateStr.split('-').map(Number);
+                        date = new Date(y, m - 1, d); 
+                    } else {
+                        date = dateStr ? new Date(dateStr) : new Date();
+                    }
+                    const monthKey = date.toLocaleString('default', { month: 'long', year: 'numeric' });
+                    if (!grouped[monthKey]) grouped[monthKey] = [];
+                    grouped[monthKey].push(t);
+                });
+
+                // Sort transactions within groups by date desc
+                Object.keys(grouped).forEach(k => {
+                    grouped[k].sort((a, b) => new Date(b.dateCollected || b.date) - new Date(a.dateCollected || a.date));
+                });
+
+                // Sort Months (Newest first)
+                const sortedKeys = Object.keys(grouped).sort((a,b) => new Date(b) - new Date(a));
+
+                setGeneratedReport({ 
+                    startDate, 
+                    endDate: now, 
+                    groupedData: grouped, 
+                    sortedKeys: sortedKeys,
+                    totalIncome: fundTrans.filter(t => t.type === 'income').reduce((a,c) => a+parseFloat(c.amount), 0),
+                    totalExpense: fundTrans.filter(t => t.type === 'expense').reduce((a,c) => a+parseFloat(c.amount), 0)
+                });
+            };
+
+            const downloadPDF = () => {
+                const element = document.getElementById('printable-fund-report');
+                const opt = {
+                    margin: 0.5,
+                    filename: `${activeTab}_Report_${reportPeriod}.pdf`,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2 },
+                    jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+                };
+                if (window.html2pdf) {
+                    html2pdf().set(opt).from(element).save();
+                } else {
+                    alert("PDF Generator is loading. Please try again.");
+                }
+            };
 
             if (accessibleFunds.length === 0) return <div className="p-6 text-center text-gray-500">You do not have permission to view any financial records.</div>;
 
             return (
                 <div className="p-6">
                     <ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} />
-                    <div className="flex flex-col md:flex-row justify-between items-center mb-6"><h2 className="text-2xl font-bold text-gray-800">Financial Tracker</h2></div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8 overflow-x-auto pb-4">{accessibleFunds.map(dept => (<div key={dept} className="bg-white p-4 rounded shadow min-w-[150px] border-t-2 border-indigo-500"><p className="text-xs text-gray-500 font-bold uppercase truncate">{dept}</p><p className={`text-lg font-bold ${getDeptBalance(dept) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(getDeptBalance(dept))}</p></div>))}</div>
+                    
+                    {/* Report Modal */}
+                    {showReportConfig && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[150] p-4">
+                            <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+                                <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
+                                    <h3 className="font-bold text-lg text-gray-800">Generate Report: {activeTab}</h3>
+                                    <button onClick={() => { setShowReportConfig(false); setGeneratedReport(null); }} className="text-gray-500 hover:text-gray-700"><i className="fas fa-times"></i></button>
+                                </div>
+                                
+                                <div className="p-4 border-b flex flex-col md:flex-row gap-4 items-end bg-white">
+                                    <div className="flex-1 w-full">
+                                        <label className="block text-xs font-bold text-gray-500 mb-1">Period</label>
+                                        <select className="w-full border p-2 rounded" value={reportPeriod} onChange={e => setReportPeriod(e.target.value)}>
+                                            <option value="Monthly">Current Month</option>
+                                            <option value="Last Month">Last Month</option>
+                                            <option value="Weekly">Last 7 Days</option>
+                                            <option value="Yearly">Current Year</option>
+                                            <option value="All Time">All Time</option>
+                                        </select>
+                                    </div>
+                                    <button onClick={generateReport} className="bg-indigo-600 text-white px-6 py-2 rounded font-bold hover:bg-indigo-700 w-full md:w-auto">Generate View</button>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto p-6 bg-gray-100">
+                                    {generatedReport ? (
+                                        <div className="bg-white p-8 shadow-lg max-w-2xl mx-auto" id="printable-fund-report">
+                                            <div className="text-center mb-6 border-b pb-4">
+                                                <h1 className="text-2xl font-bold text-gray-800 uppercase tracking-wide">Elect Word Ministry</h1>
+                                                <h2 className="text-xl text-indigo-700 font-bold mt-1">{activeTab} Report</h2>
+                                                <p className="text-sm text-gray-500 mt-2">
+                                                    {reportPeriod === 'All Time' ? 'All Transactions' : `${formatDate(generatedReport.startDate.toISOString())} — ${formatDate(generatedReport.endDate.toISOString())}`}
+                                                </p>
+                                            </div>
+
+                                            <div className="grid grid-cols-3 gap-4 mb-6 text-center">
+                                                <div className="bg-green-50 p-2 rounded border border-green-100">
+                                                    <span className="block text-xs text-green-600 font-bold uppercase">Total Income</span>
+                                                    <span className="block text-lg font-bold text-gray-800">{formatCurrency(generatedReport.totalIncome)}</span>
+                                                </div>
+                                                <div className="bg-red-50 p-2 rounded border border-red-100">
+                                                    <span className="block text-xs text-red-600 font-bold uppercase">Total Expense</span>
+                                                    <span className="block text-lg font-bold text-gray-800">{formatCurrency(generatedReport.totalExpense)}</span>
+                                                </div>
+                                                <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                                                    <span className="block text-xs text-gray-600 font-bold uppercase">Net Change</span>
+                                                    <span className={`block text-lg font-bold ${generatedReport.totalIncome - generatedReport.totalExpense >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                        {formatCurrency(generatedReport.totalIncome - generatedReport.totalExpense)}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-6">
+                                                {generatedReport.sortedKeys.length === 0 ? (
+                                                    <div className="text-center py-8">
+                                                        <p className="text-gray-500 italic mb-2">No records found for this period.</p>
+                                                        <p className="text-xs text-gray-400">Try selecting "All Time" to view all data.</p>
+                                                    </div>
+                                                ) : (
+                                                    generatedReport.sortedKeys.map(month => (
+                                                        <div key={month}>
+                                                            <h4 className="font-bold text-gray-700 border-b-2 border-gray-200 pb-1 mb-2 uppercase text-sm tracking-wider">{month}</h4>
+                                                            <table className="w-full text-xs text-left mb-2">
+                                                                <thead>
+                                                                    <tr className="text-gray-400 border-b">
+                                                                        <th className="pb-1 font-normal w-24">Date</th>
+                                                                        <th className="pb-1 font-normal">Description</th>
+                                                                        <th className="pb-1 font-normal text-right">Amount</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {generatedReport.groupedData[month].map(t => (
+                                                                        <tr key={t.id} className="border-b border-gray-50 last:border-0">
+                                                                            <td className="py-2">{formatDate(t.dateCollected || t.date)}</td>
+                                                                            <td className="py-2">{t.description}</td>
+                                                                            <td className={`py-2 text-right font-medium ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                                                                                {t.type === 'expense' && '-'} {formatCurrency(t.amount)}
+                                                                            </td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                            <div className="flex justify-end pt-1 border-t border-dashed">
+                                                                <span className="text-xs font-bold text-gray-500 mr-4">Month Net:</span>
+                                                                <span className="text-xs font-bold">
+                                                                    {formatCurrency(
+                                                                        generatedReport.groupedData[month].reduce((acc, curr) => acc + (curr.type === 'income' ? parseFloat(curr.amount) : -parseFloat(curr.amount)), 0)
+                                                                    )}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
+                                            
+                                            <div className="mt-8 pt-4 border-t text-center">
+                                                <p className="text-[10px] text-gray-400">Generated by {user.name} on {new Date().toLocaleString('en-PH')}</p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="h-full flex items-center justify-center text-gray-400 flex-col">
+                                            <i className="fas fa-file-invoice-dollar text-4xl mb-2"></i>
+                                            <p>Select a period and click Generate</p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="p-4 border-t bg-gray-50 flex justify-end gap-2 rounded-b-lg">
+                                    <button onClick={() => { setShowReportConfig(false); setGeneratedReport(null); }} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded">Close</button>
+                                    {generatedReport && <button onClick={downloadPDF} className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-black"><i className="fas fa-download mr-2"></i> Download PDF</button>}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex flex-col md:flex-row justify-between items-center mb-4">
+                        <h2 className="text-2xl font-bold text-gray-800">Financial Tracker</h2>
+                    </div>
+
+                    {/* Tabs Navigation */}
+                    <div className="flex overflow-x-auto border-b mb-6 no-scrollbar pb-1">
+                        <button 
+                            onClick={() => { setActiveTab('Overview'); cancelEdit(); }} 
+                            className={`px-6 py-3 whitespace-nowrap font-medium text-sm transition-colors duration-200 ${activeTab === 'Overview' ? 'border-b-2 border-indigo-600 text-indigo-600 bg-indigo-50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+                        >
+                            Overview
+                        </button>
+                        {accessibleFunds.map(dept => (
+                            <button 
+                                key={dept} 
+                                onClick={() => { setActiveTab(dept); cancelEdit(); }} 
+                                className={`px-6 py-3 whitespace-nowrap font-medium text-sm transition-colors duration-200 ${activeTab === dept ? 'border-b-2 border-indigo-600 text-indigo-600 bg-indigo-50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+                            >
+                                {dept}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Balance Cards */}
+                    {activeTab === 'Overview' ? (
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8 overflow-x-auto pb-4">
+                            {accessibleFunds.map(dept => (
+                                <div key={dept} className="bg-white p-4 rounded-lg shadow min-w-[150px] border-t-4 border-indigo-500">
+                                    <p className="text-xs text-gray-500 font-bold uppercase truncate mb-1">{dept}</p>
+                                    <p className={`text-lg font-bold ${getDeptBalance(dept) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(getDeptBalance(dept))}</p>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="mb-8 flex justify-between items-center">
+                            <div className="bg-white p-6 rounded-lg shadow border-l-4 border-indigo-500 flex justify-between items-center max-w-md flex-1 mr-4">
+                                <div>
+                                    <p className="text-sm text-gray-500 font-bold uppercase">{activeTab} Balance</p>
+                                    <p className={`text-3xl font-bold mt-1 ${getDeptBalance(activeTab) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        {formatCurrency(getDeptBalance(activeTab))}
+                                    </p>
+                                </div>
+                                <div className="bg-indigo-50 p-3 rounded-full text-indigo-600">
+                                    <i className="fas fa-wallet text-2xl"></i>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowReportConfig(true)} className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-3 rounded shadow-sm font-bold flex items-center">
+                                <i className="fas fa-file-alt mr-2 text-indigo-600"></i> Generate Report
+                            </button>
+                        </div>
+                    )}
+
                     <div className="flex flex-col lg:flex-row gap-6">
-                        {accessibleFunds.some(dept => getPermissions(user, dept).manage) && (
-                            <div className="lg:w-1/3 bg-white p-6 rounded-lg shadow h-fit">
-                                <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg">{editingId ? 'Edit Transaction' : 'New Transaction'}</h3>{editingId && <button onClick={cancelEdit} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>}</div>
+                        {/* Transaction Form - Visible ONLY in specific fund tabs, NOT in Overview */}
+                        {activeTab !== 'Overview' && getPermissions(user, activeTab).manage && (
+                            <div className="lg:w-1/3 bg-white p-6 rounded-lg shadow h-fit order-1 lg:order-1">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="font-bold text-lg text-gray-800">{editingId ? 'Edit Transaction' : 'New Transaction'}</h3>
+                                    {editingId && <button onClick={cancelEdit} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded">Cancel</button>}
+                                </div>
                                 <form onSubmit={triggerSubmit}>
-                                    <div className="mb-3"><label className="text-xs font-bold text-gray-500">Fund</label><select className="w-full border p-2 rounded" value={form.department} onChange={e => setForm({...form, department: e.target.value, projectId: ''})}>{accessibleFunds.filter(dept => getPermissions(user, dept).manage).map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+                                    <div className="mb-3">
+                                        <label className="text-xs font-bold text-gray-500">Fund</label>
+                                        <select 
+                                            className={`w-full border p-2 rounded ${activeTab !== 'Overview' ? 'bg-gray-100 cursor-not-allowed' : ''}`} 
+                                            value={form.department} 
+                                            disabled={activeTab !== 'Overview'} // Lock fund if in specific tab
+                                            onChange={e => setForm({...form, department: e.target.value, projectId: ''})}
+                                        >
+                                            {accessibleFunds.filter(dept => getPermissions(user, dept).manage).map(d => <option key={d} value={d}>{d}</option>)}
+                                        </select>
+                                    </div>
                                     <div className="mb-3"><label className="text-xs font-bold text-gray-500">Type</label><select className="w-full border p-2 rounded" value={form.type} onChange={e => setForm({...form, type: e.target.value})}><option value="income">Income / Donation</option><option value="expense">Expense</option></select></div>
                                     {availableProjects.length > 0 && <div className="mb-3 bg-indigo-50 p-2 rounded border border-indigo-100"><label className="text-xs font-bold text-indigo-800">Project (Optional)</label><select className="w-full border p-2 rounded text-sm" value={form.projectId} onChange={e => setForm({...form, projectId: e.target.value})}><option value="">-- None --</option>{availableProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>}
                                     <div className="mb-3"><label className="text-xs font-bold text-gray-500">Amount</label><input type="number" step="0.01" required className="w-full border p-2 rounded" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} /></div>
-                                    
-                                    {/* Date Collected Input */}
                                     <div className="mb-3"><label className="text-xs font-bold text-gray-500">Date Collected</label><input type="date" required className="w-full border p-2 rounded" value={form.dateCollected} onChange={e => setForm({...form, dateCollected: e.target.value})} /></div>
-                                    
                                     <div className="mb-4"><label className="text-xs font-bold text-gray-500">Description</label><input type="text" required className="w-full border p-2 rounded" value={form.description} onChange={e => setForm({...form, description: e.target.value})} /></div>
-                                    
-                                    {canManageCurrentFund ? <button type="submit" className={`w-full text-white py-2 rounded font-bold ${editingId ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>{editingId ? 'Update Transaction' : 'Add Transaction'}</button> : <p className="text-xs text-red-500 text-center">You cannot add records to this fund.</p>}
+                                    {canManageCurrentFund ? <button type="submit" className={`w-full text-white py-2 rounded font-bold transition-colors ${editingId ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>{editingId ? 'Update Transaction' : 'Add Transaction'}</button> : <p className="text-xs text-red-500 text-center bg-red-50 p-2 rounded">You cannot add records to this fund.</p>}
                                 </form>
                             </div>
                         )}
-                        <div className="lg:w-2/3 bg-white rounded-lg shadow overflow-hidden flex-1"><table className="w-full text-left border-collapse"><thead className="bg-gray-50"><tr><th className="p-3 text-xs font-bold text-gray-600 border-b">Date (Input)</th><th className="p-3 text-xs font-bold text-gray-600 border-b">Collected</th><th className="p-3 text-xs font-bold text-gray-600 border-b">Fund/Proj</th><th className="p-3 text-xs font-bold text-gray-600 border-b">Description</th><th className="p-3 text-xs font-bold text-gray-600 border-b text-right">Amount</th><th className="p-3 text-xs font-bold text-gray-600 border-b">Action</th></tr></thead><tbody>{visibleTransactions.length === 0 ? <tr><td colSpan="6" className="p-4 text-center text-gray-500">No records found.</td></tr> : visibleTransactions.map(t => { const canEditThis = getPermissions(user, t.department).manage; return (<tr key={t.id} className={`hover:bg-gray-50 border-b ${editingId === t.id ? 'bg-blue-50' : ''}`}>
-                            <td className="p-3 text-sm text-gray-500">{formatDate(t.dateInput || t.date)}</td>
-                            <td className="p-3 text-sm font-bold">{formatDate(t.dateCollected || t.date)}</td>
-                            <td className="p-3 text-sm"><span className="px-2 py-1 bg-gray-100 rounded text-xs font-bold block w-fit">{t.department}</span>{t.projectId && <span className="text-xs text-indigo-600 block mt-1">↳ {projects.find(p=>p.id == t.projectId)?.name}</span>}</td>
-                            <td className="p-3 text-sm">{t.description}</td>
-                            <td className={`p-3 text-sm font-bold text-right ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>{t.type === 'expense' && '-'}{formatCurrency(t.amount)}</td>
-                            <td className="p-3 text-sm text-center">{canEditThis && <div className="flex items-center justify-center space-x-2"><button onClick={() => handleEdit(t)} className="text-blue-500 hover:text-blue-700"><i className="fas fa-edit"></i></button><button onClick={() => triggerDelete(t.id)} className="text-red-400 hover:text-red-600"><i className="fas fa-trash"></i></button></div>}</td>
-                        </tr>); })}</tbody></table></div>
+                        
+                        {/* Transaction Table */}
+                        <div className="flex-1 bg-white rounded-lg shadow overflow-hidden order-2 lg:order-2">
+                            <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+                                <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wide">
+                                    {activeTab === 'Overview' ? 'Recent Activity (All Funds)' : `${activeTab} History`}
+                                </h3>
+                                <span className="text-xs text-gray-400 font-normal">{visibleTransactions.length} records</span>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="p-3 text-xs font-bold text-gray-600 border-b whitespace-nowrap">Input Date</th>
+                                            <th className="p-3 text-xs font-bold text-gray-600 border-b whitespace-nowrap">Collected</th>
+                                            <th className="p-3 text-xs font-bold text-gray-600 border-b">Fund/Proj</th>
+                                            <th className="p-3 text-xs font-bold text-gray-600 border-b">Description</th>
+                                            <th className="p-3 text-xs font-bold text-gray-600 border-b text-right">Amount</th>
+                                            <th className="p-3 text-xs font-bold text-gray-600 border-b text-center">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {visibleTransactions.length === 0 ? <tr><td colSpan="6" className="p-8 text-center text-gray-500 italic">No records found for this view.</td></tr> : visibleTransactions.map(t => { 
+                                            const canEditThis = getPermissions(user, t.department).manage; 
+                                            return (
+                                                <tr key={t.id} className={`hover:bg-gray-50 border-b transition-colors ${editingId === t.id ? 'bg-blue-50' : ''}`}>
+                                                    <td className="p-3 text-sm text-gray-400 text-xs whitespace-nowrap">{formatDate(t.dateInput || t.date)}</td>
+                                                    <td className="p-3 text-sm font-bold whitespace-nowrap">{formatDate(t.dateCollected || t.date)}</td>
+                                                    <td className="p-3 text-sm">
+                                                        <span className={`px-2 py-1 rounded text-xs font-bold inline-block w-fit ${t.department === activeTab ? 'bg-gray-100 text-gray-800' : 'bg-indigo-50 text-indigo-700'}`}>{t.department}</span>
+                                                        {t.projectId && <span className="text-xs text-indigo-500 block mt-1 ml-1">↳ {projects.find(p=>p.id == t.projectId)?.name}</span>}
+                                                    </td>
+                                                    <td className="p-3 text-sm text-gray-700">{t.description}</td>
+                                                    <td className={`p-3 text-sm font-bold text-right whitespace-nowrap ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                                                        {t.type === 'expense' && '-'}
+                                                        {formatCurrency(t.amount)}
+                                                    </td>
+                                                    <td className="p-3 text-sm text-center">
+                                                        {canEditThis && (
+                                                            <div className="flex items-center justify-center space-x-3">
+                                                                <button onClick={() => handleEdit(t)} className="text-blue-400 hover:text-blue-600 transition-colors" title="Edit"><i className="fas fa-edit"></i></button>
+                                                                <button onClick={() => triggerDelete(t.id)} className="text-gray-400 hover:text-red-500 transition-colors" title="Delete"><i className="fas fa-trash"></i></button>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ); 
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             );
@@ -1062,6 +1296,7 @@
         const Settings = ({ user, usersDB, membersDB }) => {
             const [newUser, setNewUser] = useState({ name: '', username: '', password: '', role: 'admin' });
             const [confirm, setConfirm] = useState({ isOpen: false, msg: '', action: null });
+            const [showPasswords, setShowPasswords] = useState(false);
             
             const handleAddUser = (e) => {
                 e.preventDefault();
@@ -1107,12 +1342,23 @@
                             <button className="bg-indigo-600 text-white px-4 py-2 rounded font-bold hover:bg-indigo-700">Create User</button>
                         </form>
 
+                        <div className="flex justify-end mb-2">
+                            <button 
+                                onClick={() => setShowPasswords(!showPasswords)} 
+                                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center bg-indigo-50 px-3 py-1 rounded"
+                            >
+                                <i className={`fas ${showPasswords ? 'fa-eye-slash' : 'fa-eye'} mr-2`}></i>
+                                {showPasswords ? 'Hide Passwords' : 'Show Passwords'}
+                            </button>
+                        </div>
+
                         <div className="overflow-x-auto">
                             <table className="w-full text-left text-sm">
                                 <thead className="bg-gray-100">
                                     <tr>
                                         <th className="p-3 border-b">Name</th>
                                         <th className="p-3 border-b">Username</th>
+                                        <th className="p-3 border-b">Password</th>
                                         <th className="p-3 border-b">Role</th>
                                         <th className="p-3 border-b text-right">Action</th>
                                     </tr>
@@ -1122,6 +1368,9 @@
                                         <tr key={u.id} className="border-b hover:bg-gray-50">
                                             <td className="p-3">{u.name} {u.id === user.id && <span className="text-xs bg-green-100 text-green-700 px-1 rounded ml-1">(You)</span>}</td>
                                             <td className="p-3 font-mono text-xs">{u.username}</td>
+                                            <td className="p-3 font-mono text-xs text-gray-500">
+                                                {showPasswords ? u.password : '••••••••'}
+                                            </td>
                                             <td className="p-3 capitalize">{u.role}</td>
                                             <td className="p-3 text-right">
                                                 {u.id !== user.id && (
@@ -1240,7 +1489,6 @@
                             <NavItem id="finances" icon="fa-file-invoice-dollar" label="Financials" />
                             <NavItem id="members" icon="fa-users" label="Congregation" />
                             <NavItem id="projects" icon="fa-tasks" label="Projects" />
-                            <NavItem id="reports" icon="fa-file-alt" label="Reports" allowedRoles={['admin', 'treasurer', 'Pastor', 'Deacon', 'Elder', 'Youth Coordinator', "Men's Treasurer", "Women's President", "Worship Leader"]} />
                             <div className="my-4 border-t border-gray-200"></div>
                             <NavItem id="settings" icon="fa-cog" label="Settings" allowedRoles={['admin']} />
                         </nav>
@@ -1278,7 +1526,6 @@
                         {view === 'calendar' && <Calendar user={user} eventsDB={eventsDB} />}
                         {view === 'info' && <ChurchInfo user={user} infoDB={infoDB} />}
                         {view === 'settings' && <Settings user={user} usersDB={usersDB} membersDB={membersDB} />}
-                        {view === 'reports' && <Reports user={user} financesDB={financesDB} projectsDB={projectsDB} />}
                     </div>
                 </div>
             );
