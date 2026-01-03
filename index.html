@@ -991,6 +991,85 @@
                 </div>
             );
         };
+        
+        const Settings = ({ user, usersDB, membersDB }) => {
+            const [newUser, setNewUser] = useState({ name: '', username: '', password: '', role: 'admin' });
+            const [confirm, setConfirm] = useState({ isOpen: false, msg: '', action: null });
+            
+            const handleAddUser = (e) => {
+                e.preventDefault();
+                setConfirm({ 
+                    isOpen: true, 
+                    msg: 'Create this user account?', 
+                    action: () => { 
+                        usersDB.add(newUser).then(() => {
+                            setNewUser({ name: '', username: '', password: '', role: 'admin' });
+                        });
+                    } 
+                });
+            };
+
+            const handleDeleteUser = (id) => {
+                setConfirm({ isOpen: true, msg: 'Delete this user account?', action: () => usersDB.remove(id) });
+            };
+
+            return (
+                <div className="p-6">
+                    <ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} />
+                    <h2 className="text-2xl font-bold mb-6 text-gray-800">System Settings</h2>
+                    
+                    <div className="bg-white p-6 rounded-lg shadow mb-8">
+                        <h3 className="font-bold text-lg mb-4">User Management</h3>
+                        <p className="text-sm text-gray-500 mb-4">Create accounts for church leadership to access the admin system.</p>
+                        
+                        <form onSubmit={handleAddUser} className="bg-gray-50 p-4 rounded mb-6 border">
+                            <h4 className="font-bold text-sm mb-3">Add New System User</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div><label className="text-xs font-bold text-gray-500">Full Name</label><input className="w-full border p-2 rounded" required value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="e.g. John Doe" /></div>
+                                <div><label className="text-xs font-bold text-gray-500">Username</label><input className="w-full border p-2 rounded" required value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} /></div>
+                                <div><label className="text-xs font-bold text-gray-500">Password</label><input className="w-full border p-2 rounded" required value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} /></div>
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500">Role</label>
+                                    <select className="w-full border p-2 rounded" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>
+                                        <option value="admin">Admin</option>
+                                        <option value="editor">Editor</option>
+                                        <option value="viewer">Viewer</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button className="bg-indigo-600 text-white px-4 py-2 rounded font-bold hover:bg-indigo-700">Create User</button>
+                        </form>
+
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-gray-100">
+                                    <tr>
+                                        <th className="p-3 border-b">Name</th>
+                                        <th className="p-3 border-b">Username</th>
+                                        <th className="p-3 border-b">Role</th>
+                                        <th className="p-3 border-b text-right">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {usersDB.data.map(u => (
+                                        <tr key={u.id} className="border-b hover:bg-gray-50">
+                                            <td className="p-3">{u.name} {u.id === user.id && <span className="text-xs bg-green-100 text-green-700 px-1 rounded ml-1">(You)</span>}</td>
+                                            <td className="p-3 font-mono text-xs">{u.username}</td>
+                                            <td className="p-3 capitalize">{u.role}</td>
+                                            <td className="p-3 text-right">
+                                                {u.id !== user.id && (
+                                                    <button onClick={() => handleDeleteUser(u.id)} className="text-red-500 hover:text-red-700"><i className="fas fa-trash"></i></button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
 
         const App = () => {
             const [user, setUser] = useState(null);
