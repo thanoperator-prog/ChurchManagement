@@ -6,12 +6,9 @@
     <title>Elect Word Ministry | Church Management System</title>
     
     <!-- PWA Manifest & Icons -->
-    <link rel="manifest" href="manifest.json">
-    <link rel="icon" type="image/png" href="icon-512.png">
     <meta name="theme-color" content="#4f46e5">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="apple-touch-icon" href="icon-512.png">
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -22,11 +19,6 @@
     <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    
-    <!-- Firebase SDKs (v9 Compat for easy React integration without build step) -->
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     
     <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -81,47 +73,42 @@
 <body>
     <div id="root"></div>
 
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Expose Firebase functions to global scope for Babel script
+        window.firebaseModules = {
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+            getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, setDoc, onSnapshot
+        };
+    </script>
+
     <script type="text/babel">
-        // --- Service Worker Registration ---
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                // Simplified for this environment
-                // navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW failed', err));
-            });
-        }
-
         const { useState, useEffect, useMemo, useRef } = React;
+        const { 
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+            getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, setDoc, onSnapshot 
+        } = window.firebaseModules;
 
-        // --- FIREBASE CONFIGURATION (ADAPTED FOR PREVIEW ENV) ---
-        // Using environment variables provided by the host for seamless DB access
+        // --- FIREBASE CONFIGURATION ---
         const firebaseConfig = typeof __firebase_config !== 'undefined' 
             ? JSON.parse(__firebase_config) 
             : {
-                apiKey: "demo-key",
-                authDomain: "demo.firebaseapp.com",
-                projectId: "demo-project",
+                apiKey: "AIzaSyAQjm70TjTOswFf6d7SXQ-sOco6Zji_gpg",
+                authDomain: "ewmapp-9c3c0.firebaseapp.com",
+                projectId: "ewmapp-9c3c0",
+                storageBucket: "ewmapp-9c3c0.firebasestorage.app",
+                messagingSenderId: "480842441130",
+                appId: "1:480842441130:web:28593a6e1b52d058668bd3",
+                measurementId: "G-9M50ZM5TG0"
             };
 
-        if (!firebase.apps.length) {
-            firebase.initializeApp(firebaseConfig);
-        }
-        
-        const db = firebase.firestore();
-        const auth = firebase.auth();
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-        try {
-            // Enable offline persistence if possible, though strict in iframe
-            db.enablePersistence().catch(err => {
-                if (err.code == 'failed-precondition') {
-                    console.log('Persistence failed: Multiple tabs open');
-                } else if (err.code == 'unimplemented') {
-                    console.log('Persistence not supported');
-                }
-            });
-        } catch(err) {
-            console.warn("Firestore settings warning:", err);
-        }
 
         // --- Constants & Configuration ---
         const DEPARTMENTS = ['General Offering', 'Youth Fund', 'Food Fund', "Men's Fund", "Women's Fund", 'Music Fund', 'Pledges'];
@@ -135,8 +122,6 @@
             "Music Department": ["Worship Leader", "Music Director", "Keyboardist", "Drummer", "Bassist", "Guitarist", "Vocalist"],
             "Tech Team": ["Tech Lead", "Tech Support"]
         };
-
-        const LEADERSHIP_ROLES = ["Pastor", "Deacon", "Elder", "Church Treasurer", "Admin"];
 
         const DEPT_CONFIG = {
             'General Offering': { leaders: ['Church Treasurer', 'Pastor'], viewers: ['ALL'] },
@@ -179,7 +164,7 @@
             return { view: canView, manage: canManage };
         };
 
-        // --- Custom Hook with Strict Path Adaptation ---
+        // --- Custom Hook with Modular SDK ---
         const useFirestore = (collectionName, firebaseAuthUser) => {
             const [data, setData] = useState([]);
             const [loading, setLoading] = useState(true);
@@ -189,9 +174,9 @@
                 if (!firebaseAuthUser) return;
                 
                 // STRICT PATH PATTERN: artifacts/{appId}/public/data/{collectionName}
-                const collectionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection(collectionName);
+                const collectionRef = collection(db, 'artifacts', appId, 'public', 'data', collectionName);
 
-                const unsubscribe = collectionRef.onSnapshot(snapshot => {
+                const unsubscribe = onSnapshot(collectionRef, (snapshot) => {
                     const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     setData(items);
                     setLoading(false);
@@ -205,22 +190,22 @@
             }, [collectionName, firebaseAuthUser]);
 
             // Helper to get the correct collection reference
-            const getRef = () => db.collection('artifacts').doc(appId).collection('public').doc('data').collection(collectionName);
+            const getRef = () => collection(db, 'artifacts', appId, 'public', 'data', collectionName);
 
             const add = async (item) => { 
-                try { await getRef().add(item); } catch(e) { console.error(e); throw e; } 
+                try { await addDoc(getRef(), item); } catch(e) { console.error(e); throw e; } 
             };
             const update = async (id, item) => { 
-                try { const { id: _, ...data } = item; await getRef().doc(id).update(data); } catch(e) { console.error(e); throw e; } 
+                try { const { id: _, ...data } = item; await updateDoc(doc(getRef(), id), data); } catch(e) { console.error(e); throw e; } 
             };
             const remove = async (id) => { 
-                try { await getRef().doc(id).delete(); } catch(e) { console.error(e); throw e; } 
+                try { await deleteDoc(doc(getRef(), id)); } catch(e) { console.error(e); throw e; } 
             };
-            const setDoc = async (id, item) => { 
-                try { await getRef().doc(id).set(item); } catch(e) { console.error(e); throw e; } 
+            const setDocFn = async (id, item) => { 
+                try { await setDoc(doc(getRef(), id), item); } catch(e) { console.error(e); throw e; } 
             };
 
-            return { data, loading, error, add, update, remove, setDoc };
+            return { data, loading, error, add, update, remove, setDoc: setDocFn };
         };
 
         const formatCurrency = (amount) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount);
@@ -622,27 +607,218 @@
             );
         };
 
-        const Financials = ({ user, financesDB, projectsDB }) => { /* ... (Same as previous, using provided structure) */ 
-             const transactions = financesDB.data;
+        const Financials = ({ user, financesDB, projectsDB }) => { 
+            const transactions = financesDB.data;
             const projects = projectsDB.data;
             const accessibleFunds = useMemo(() => DEPARTMENTS.filter(dept => getPermissions(user, dept).view), [user]);
+            
+            // State for the active tab (Fund)
+            const [activeTab, setActiveTab] = useState('');
+            
             const [form, setForm] = useState({ department: '', projectId: '', amount: '', type: 'income', description: '', date: new Date().toISOString().split('T')[0] });
             const [editingId, setEditingId] = useState(null);
             const [confirm, setConfirm] = useState({ isOpen: false, msg: '', action: null });
-            useEffect(() => { const manageable = accessibleFunds.find(d => getPermissions(user, d).manage); if (manageable && !form.department) setForm(prev => ({ ...prev, department: manageable })); else if (accessibleFunds.length > 0 && !form.department) setForm(prev => ({ ...prev, department: accessibleFunds[0] })); }, [accessibleFunds, user]);
-            const handleEdit = (t) => { setForm(t); setEditingId(t.id); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-            const cancelEdit = () => { setEditingId(null); setForm({ ...form, amount: '', description: '', projectId: '', date: new Date().toISOString().split('T')[0] }); };
-            const triggerSubmit = (e) => { e.preventDefault(); const action = editingId ? "Update" : "Add"; setConfirm({ isOpen: true, msg: `${action} this transaction?`, action: () => { if (editingId) financesDB.update(editingId, form).then(cancelEdit); else financesDB.add(form); }}); };
-            const triggerDelete = (id) => { setConfirm({ isOpen: true, msg: 'Delete this transaction permanently?', action: () => { financesDB.remove(id); if(editingId === id) cancelEdit(); }}); };
-            const getDeptBalance = (dept) => { const deptTrans = transactions.filter(t => t.department === dept); const inc = deptTrans.filter(t => t.type === 'income').reduce((a, c) => a + parseFloat(c.amount), 0); const exp = deptTrans.filter(t => t.type === 'expense').reduce((a, c) => a + parseFloat(c.amount), 0); return inc - exp; };
-            const visibleTransactions = transactions.filter(t => accessibleFunds.includes(t.department));
-            const availableProjects = projects.filter(p => p.department === form.department && p.status !== 'Completed');
-            const canManageCurrentFund = getPermissions(user, form.department).manage;
+
+            // Set initial tab and ensure form syncs with tab
+            useEffect(() => { 
+                if (accessibleFunds.length > 0 && !activeTab) {
+                    setActiveTab(accessibleFunds[0]);
+                }
+            }, [accessibleFunds, activeTab]);
+
+            // When tab changes, update the form's department automatically
+            useEffect(() => {
+                if (activeTab) {
+                    setForm(prev => ({ ...prev, department: activeTab, projectId: '' }));
+                    setEditingId(null); // Cancel edits if switching tabs
+                }
+            }, [activeTab]);
+
+            const handleEdit = (t) => { 
+                setForm(t); 
+                setEditingId(t.id); 
+                // Ensure we stay on the right tab if editing (though usually filtered by tab anyway)
+                if (t.department !== activeTab) setActiveTab(t.department);
+                window.scrollTo({ top: 0, behavior: 'smooth' }); 
+            };
+
+            const cancelEdit = () => { 
+                setEditingId(null); 
+                setForm({ ...form, amount: '', description: '', projectId: '', date: new Date().toISOString().split('T')[0] }); 
+            };
+
+            const triggerSubmit = (e) => { 
+                e.preventDefault(); 
+                const action = editingId ? "Update" : "Add"; 
+                setConfirm({ 
+                    isOpen: true, 
+                    msg: `${action} transaction for ${activeTab}?`, 
+                    action: () => { 
+                        if (editingId) financesDB.update(editingId, form).then(cancelEdit); 
+                        else financesDB.add({ ...form, department: activeTab }); // Ensure dept is active tab
+                    }
+                }); 
+            };
+
+            const triggerDelete = (id) => { 
+                setConfirm({ 
+                    isOpen: true, 
+                    msg: 'Delete this transaction permanently?', 
+                    action: () => { financesDB.remove(id); if(editingId === id) cancelEdit(); }
+                }); 
+            };
+
+            const getDeptBalance = (dept) => { 
+                const deptTrans = transactions.filter(t => t.department === dept); 
+                const inc = deptTrans.filter(t => t.type === 'income').reduce((a, c) => a + parseFloat(c.amount), 0); 
+                const exp = deptTrans.filter(t => t.type === 'expense').reduce((a, c) => a + parseFloat(c.amount), 0); 
+                return inc - exp; 
+            };
+
+            // Filter data for the CURRENT ACTIVE TAB
+            const visibleTransactions = transactions.filter(t => t.department === activeTab).sort((a,b) => new Date(b.date) - new Date(a.date));
+            const availableProjects = projects.filter(p => p.department === activeTab && p.status !== 'Completed');
+            const canManageCurrentFund = getPermissions(user, activeTab).manage;
+            const currentBalance = getDeptBalance(activeTab);
+
             if (accessibleFunds.length === 0) return <div className="p-6 text-center text-gray-500">You do not have permission to view any financial records.</div>;
-            return (<div className="p-6"><ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} /><div className="flex flex-col md:flex-row justify-between items-center mb-6"><h2 className="text-2xl font-bold text-gray-800">Financial Tracker</h2></div><div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8 overflow-x-auto pb-4">{accessibleFunds.map(dept => (<div key={dept} className="bg-white p-4 rounded shadow min-w-[150px] border-t-2 border-indigo-500"><p className="text-xs text-gray-500 font-bold uppercase truncate">{dept}</p><p className={`text-lg font-bold ${getDeptBalance(dept) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(getDeptBalance(dept))}</p></div>))}</div><div className="flex flex-col lg:flex-row gap-6">{accessibleFunds.some(dept => getPermissions(user, dept).manage) && (<div className="lg:w-1/3 bg-white p-6 rounded-lg shadow h-fit"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg">{editingId ? 'Edit Transaction' : 'New Transaction'}</h3>{editingId && <button onClick={cancelEdit} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>}</div><form onSubmit={triggerSubmit}><div className="mb-3"><label className="text-xs font-bold text-gray-500">Fund</label><select className="w-full border p-2 rounded" value={form.department} onChange={e => setForm({...form, department: e.target.value, projectId: ''})}>{accessibleFunds.filter(dept => getPermissions(user, dept).manage).map(d => <option key={d} value={d}>{d}</option>)}</select></div><div className="mb-3"><label className="text-xs font-bold text-gray-500">Type</label><select className="w-full border p-2 rounded" value={form.type} onChange={e => setForm({...form, type: e.target.value})}><option value="income">Income / Donation</option><option value="expense">Expense</option></select></div>{availableProjects.length > 0 && <div className="mb-3 bg-indigo-50 p-2 rounded border border-indigo-100"><label className="text-xs font-bold text-indigo-800">Project (Optional)</label><select className="w-full border p-2 rounded text-sm" value={form.projectId} onChange={e => setForm({...form, projectId: e.target.value})}><option value="">-- None --</option>{availableProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>}<div className="mb-3"><label className="text-xs font-bold text-gray-500">Amount</label><input type="number" step="0.01" required className="w-full border p-2 rounded" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} /></div><div className="mb-3"><label className="text-xs font-bold text-gray-500">Date</label><input type="date" required className="w-full border p-2 rounded" value={form.date} onChange={e => setForm({...form, date: e.target.value})} /></div><div className="mb-4"><label className="text-xs font-bold text-gray-500">Desc</label><input type="text" required className="w-full border p-2 rounded" value={form.description} onChange={e => setForm({...form, description: e.target.value})} /></div>{canManageCurrentFund ? <button type="submit" className={`w-full text-white py-2 rounded font-bold ${editingId ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>{editingId ? 'Update Transaction' : 'Add Transaction'}</button> : <p className="text-xs text-red-500 text-center">You cannot add records to this fund.</p>}</form></div>)}<div className="lg:w-2/3 bg-white rounded-lg shadow overflow-hidden flex-1"><table className="w-full text-left border-collapse"><thead className="bg-gray-50"><tr><th className="p-3 text-xs font-bold text-gray-600 border-b">Date</th><th className="p-3 text-xs font-bold text-gray-600 border-b">Fund/Proj</th><th className="p-3 text-xs font-bold text-gray-600 border-b">Desc</th><th className="p-3 text-xs font-bold text-gray-600 border-b text-right">Amount</th><th className="p-3 text-xs font-bold text-gray-600 border-b">Action</th></tr></thead><tbody>{visibleTransactions.length === 0 ? <tr><td colSpan="5" className="p-4 text-center text-gray-500">No records found.</td></tr> : visibleTransactions.map(t => { const canEditThis = getPermissions(user, t.department).manage; return (<tr key={t.id} className={`hover:bg-gray-50 border-b ${editingId === t.id ? 'bg-blue-50' : ''}`}><td className="p-3 text-sm">{formatDate(t.date)}</td><td className="p-3 text-sm"><span className="px-2 py-1 bg-gray-100 rounded text-xs font-bold block w-fit">{t.department}</span>{t.projectId && <span className="text-xs text-indigo-600 block mt-1">↳ {projects.find(p=>p.id == t.projectId)?.name}</span>}</td><td className="p-3 text-sm">{t.description}</td><td className={`p-3 text-sm font-bold text-right ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>{t.type === 'expense' && '-'}{formatCurrency(t.amount)}</td><td className="p-3 text-sm text-center">{canEditThis && <div className="flex items-center justify-center space-x-2"><button onClick={() => handleEdit(t)} className="text-blue-500 hover:text-blue-700"><i className="fas fa-edit"></i></button><button onClick={() => triggerDelete(t.id)} className="text-red-400 hover:text-red-600"><i className="fas fa-trash"></i></button></div>}</td></tr>); })}</tbody></table></div></div></div>);
+
+            return (
+                <div className="p-6">
+                    <ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} />
+                    
+                    <div className="flex flex-col md:flex-row justify-between items-center mb-6">
+                        <h2 className="text-2xl font-bold text-gray-800">Financial Tracker</h2>
+                    </div>
+
+                    {/* TABS NAVIGATION */}
+                    <div className="flex overflow-x-auto space-x-1 mb-6 border-b border-gray-200 pb-1">
+                        {accessibleFunds.map(dept => (
+                            <button 
+                                key={dept} 
+                                onClick={() => setActiveTab(dept)}
+                                className={`px-5 py-3 text-sm font-bold rounded-t-lg transition whitespace-nowrap ${activeTab === dept ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+                            >
+                                {dept}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* ACTIVE TAB CONTENT */}
+                    <div className="animate-fade-in">
+                        {/* Summary Card for Active Tab */}
+                        <div className="bg-white p-6 rounded-lg shadow border-l-4 border-indigo-500 mb-6 flex justify-between items-center">
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide">{activeTab} Balance</h3>
+                                <div className={`text-3xl font-bold ${currentBalance >= 0 ? 'text-gray-800' : 'text-red-600'}`}>
+                                    {formatCurrency(currentBalance)}
+                                </div>
+                            </div>
+                            <div className="hidden md:block text-right text-xs text-gray-400">
+                                <p>Total Transactions: {visibleTransactions.length}</p>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col lg:flex-row gap-6">
+                            {/* Transaction Form (Only if manageable) */}
+                            {canManageCurrentFund ? (
+                                <div className="lg:w-1/3 bg-white p-6 rounded-lg shadow h-fit">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h3 className="font-bold text-lg text-gray-800">{editingId ? 'Edit Entry' : 'New Transaction'}</h3>
+                                        {editingId && <button onClick={cancelEdit} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>}
+                                    </div>
+                                    <form onSubmit={triggerSubmit}>
+                                        <div className="mb-3">
+                                            <label className="text-xs font-bold text-gray-500">Fund</label>
+                                            <input className="w-full border p-2 rounded bg-gray-100 text-gray-500 cursor-not-allowed" value={activeTab} disabled />
+                                        </div>
+                                        <div className="mb-3">
+                                            <label className="text-xs font-bold text-gray-500">Type</label>
+                                            <select className="w-full border p-2 rounded" value={form.type} onChange={e => setForm({...form, type: e.target.value})}>
+                                                <option value="income">Income / Donation</option>
+                                                <option value="expense">Expense</option>
+                                            </select>
+                                        </div>
+                                        {availableProjects.length > 0 && (
+                                            <div className="mb-3 bg-indigo-50 p-2 rounded border border-indigo-100">
+                                                <label className="text-xs font-bold text-indigo-800">Project (Optional)</label>
+                                                <select className="w-full border p-2 rounded text-sm" value={form.projectId} onChange={e => setForm({...form, projectId: e.target.value})}>
+                                                    <option value="">-- None --</option>
+                                                    {availableProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                                </select>
+                                            </div>
+                                        )}
+                                        <div className="mb-3">
+                                            <label className="text-xs font-bold text-gray-500">Amount</label>
+                                            <input type="number" step="0.01" required className="w-full border p-2 rounded" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} />
+                                        </div>
+                                        <div className="mb-3">
+                                            <label className="text-xs font-bold text-gray-500">Date</label>
+                                            <input type="date" required className="w-full border p-2 rounded" value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
+                                        </div>
+                                        <div className="mb-4">
+                                            <label className="text-xs font-bold text-gray-500">Desc</label>
+                                            <input type="text" required className="w-full border p-2 rounded" value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
+                                        </div>
+                                        <button type="submit" className={`w-full text-white py-2 rounded font-bold ${editingId ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                                            {editingId ? 'Update Transaction' : 'Add Transaction'}
+                                        </button>
+                                    </form>
+                                </div>
+                            ) : (
+                                <div className="lg:w-1/3 bg-gray-50 p-6 rounded-lg border border-dashed border-gray-300 text-center h-fit">
+                                    <i className="fas fa-lock text-gray-300 text-3xl mb-2"></i>
+                                    <p className="text-sm text-gray-500">View Only Access</p>
+                                    <p className="text-xs text-gray-400">You cannot add records to {activeTab}.</p>
+                                </div>
+                            )}
+
+                            {/* Transactions Table */}
+                            <div className="lg:w-2/3 bg-white rounded-lg shadow overflow-hidden flex-1">
+                                <table className="w-full text-left border-collapse">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="p-3 text-xs font-bold text-gray-600 border-b">Date</th>
+                                            <th className="p-3 text-xs font-bold text-gray-600 border-b">Desc</th>
+                                            <th className="p-3 text-xs font-bold text-gray-600 border-b text-right">Amount</th>
+                                            <th className="p-3 text-xs font-bold text-gray-600 border-b text-center">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {visibleTransactions.length === 0 ? (
+                                            <tr><td colSpan="4" className="p-8 text-center text-gray-500 italic">No records found for this fund.</td></tr>
+                                        ) : (
+                                            visibleTransactions.map(t => (
+                                                <tr key={t.id} className={`hover:bg-gray-50 border-b ${editingId === t.id ? 'bg-blue-50' : ''}`}>
+                                                    <td className="p-3 text-sm whitespace-nowrap">{formatDate(t.date)}</td>
+                                                    <td className="p-3 text-sm">
+                                                        <div className="font-medium">{t.description}</div>
+                                                        {t.projectId && <div className="text-xs text-indigo-600 mt-0.5">Project: {projects.find(p=>p.id == t.projectId)?.name}</div>}
+                                                    </td>
+                                                    <td className={`p-3 text-sm font-bold text-right ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                                                        {t.type === 'expense' && '-'}{formatCurrency(t.amount)}
+                                                    </td>
+                                                    <td className="p-3 text-sm text-center">
+                                                        {canManageCurrentFund && (
+                                                            <div className="flex items-center justify-center space-x-2">
+                                                                <button onClick={() => handleEdit(t)} className="text-blue-500 hover:text-blue-700"><i className="fas fa-edit"></i></button>
+                                                                <button onClick={() => triggerDelete(t.id)} className="text-red-400 hover:text-red-600"><i className="fas fa-trash"></i></button>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
         };
 
-        const Members = ({ user, membersDB }) => { /* ... (Same as previous Members component) */
+        const Members = ({ user, membersDB }) => { 
             const members = membersDB.data;
             const [showModal, setShowModal] = useState(false);
             const [form, setForm] = useState({ name: '', email: '', phone: '', address: '', status: 'Active', roles: [] });
@@ -655,10 +831,28 @@
             const triggerSubmit = (e) => { e.preventDefault(); const action = editingId ? "Update" : "Add"; setConfirm({ isOpen: true, msg: `${action} this member?`, action: () => { if (editingId) { membersDB.update(editingId, form).then(resetForm); } else { membersDB.add(form).then(resetForm); } }}); };
             const groupedMembers = useMemo(() => { const groups = {}; Object.keys(CHURCH_STRUCTURE).forEach(dept => groups[dept] = []); groups["General Congregation"] = []; const PRIORITY_ORDER = ["Church Leadership", "Music Department", "Youth Department", "Men's Department", "Women's Department", "Tech Team"]; members.forEach(m => { let assigned = false; const memberRoles = m.roles || []; for (const dept of PRIORITY_ORDER) { const roles = CHURCH_STRUCTURE[dept]; if (memberRoles.some(r => roles.includes(r))) { groups[dept].push(m); assigned = true; break; } } if (!assigned) groups["General Congregation"].push(m); }); return groups; }, [members]);
 
-            return (<div className="p-6"><ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} /><div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-gray-800">Congregation Directory</h2>{user.role === 'admin' && <button onClick={() => { resetForm(); setShowModal(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"><i className="fas fa-plus mr-2"></i> Add Member</button>}</div><div className="space-y-8">{Object.entries(groupedMembers).map(([dept, deptMembers]) => (deptMembers.length > 0 && (<div key={dept}><h3 className="text-lg font-bold text-indigo-800 border-b border-indigo-200 pb-2 mb-4 uppercase tracking-wide">{dept}</h3><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{deptMembers.map(m => (<div key={m.id} className="bg-white p-4 rounded-lg shadow flex items-start space-x-4 relative group">{user.role === 'admin' && (<div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition z-10 bg-white rounded p-1"><button onClick={() => handleEdit(m)} className="text-blue-500 hover:text-blue-700"><i className="fas fa-edit"></i></button><button onClick={() => triggerDelete(m.id)} className="text-red-500 hover:text-red-700"><i className="fas fa-trash"></i></button></div>)}<div className="bg-indigo-100 rounded-full w-12 h-12 flex items-center justify-center text-indigo-600 font-bold text-xl flex-shrink-0">{m.name.charAt(0)}</div><div className="flex-1 min-w-0"><div className="flex justify-between items-start"><h3 className="font-bold text-gray-800 truncate">{m.name}</h3></div><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${m.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{m.status}</span>{m.roles && m.roles.length > 0 && <div className="flex flex-wrap gap-1 mt-1 mb-2">{m.roles.map((r,i) => <span key={i} className="bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded text-[10px]">{r}</span>)}</div>}{isLeadership(user) ? <><a href={`mailto:${m.email}`} className="text-sm text-gray-500 truncate block hover:text-indigo-600"><i className="fas fa-envelope w-4"></i> {m.email || 'N/A'}</a><a href={`tel:${m.phone}`} className="text-sm text-gray-500 truncate block hover:text-indigo-600"><i className="fas fa-phone w-4"></i> {m.phone || 'N/A'}</a><a href={`https://maps.google.com/?q=${encodeURIComponent(m.address)}`} target="_blank" className="text-sm text-gray-500 truncate block hover:text-indigo-600"><i className="fas fa-home w-4"></i> {m.address || 'N/A'}</a></> : <p className="text-xs text-gray-400 italic mt-2">Contact details hidden</p>}</div></div>))}</div></div>)))}</div>{showModal && <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white p-6 rounded-lg w-full max-w-lg overflow-y-auto"><h3 className="text-xl font-bold mb-4">{editingId ? 'Edit Member' : 'Add New Member'}</h3><form onSubmit={triggerSubmit}><div className="space-y-3"><input className="w-full border p-2 rounded" placeholder="Full Name" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} /><select className="w-full border p-2 rounded" value={form.status} onChange={e => setForm({...form, status: e.target.value})}><option>Active</option><option>Visitor</option><option>Inactive</option></select><input className="w-full border p-2 rounded" placeholder="Email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} /><input className="w-full border p-2 rounded" placeholder="Phone" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /><input className="w-full border p-2 rounded" placeholder="Address" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div><div className="mt-4 flex justify-end space-x-2"><button type="button" onClick={resetForm} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">{editingId ? 'Update' : 'Save'} Member</button></div></form></div></div>}</div>);
+            return (
+                <div className="p-6">
+                    <ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} />
+                    
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
+                        <div>
+                            <h2 className="text-2xl font-bold text-gray-800">Congregation Directory</h2>
+                            {user.role === 'admin' && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                    <i className="fas fa-info-circle mr-1"></i> 
+                                    To add a new member, please create a user account in <button onClick={() => document.querySelector('[id="settings"]').click()} className="text-indigo-600 hover:underline">Settings</button>.
+                                </p>
+                            )}
+                        </div>
+                        {/* Add Member button removed as requested */}
+                    </div>
+
+                    <div className="space-y-8">{Object.entries(groupedMembers).map(([dept, deptMembers]) => (deptMembers.length > 0 && (<div key={dept}><h3 className="text-lg font-bold text-indigo-800 border-b border-indigo-200 pb-2 mb-4 uppercase tracking-wide">{dept}</h3><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{deptMembers.map(m => (<div key={m.id} className="bg-white p-4 rounded-lg shadow flex items-start space-x-4 relative group">{user.role === 'admin' && (<div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition z-10 bg-white rounded p-1"><button onClick={() => handleEdit(m)} className="text-blue-500 hover:text-blue-700"><i className="fas fa-edit"></i></button><button onClick={() => triggerDelete(m.id)} className="text-red-500 hover:text-red-700"><i className="fas fa-trash"></i></button></div>)}<div className="bg-indigo-100 rounded-full w-12 h-12 flex items-center justify-center text-indigo-600 font-bold text-xl flex-shrink-0">{m.name.charAt(0)}</div><div className="flex-1 min-w-0"><div className="flex justify-between items-start"><h3 className="font-bold text-gray-800 truncate">{m.name}</h3></div><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${m.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{m.status}</span>{m.roles && m.roles.length > 0 && <div className="flex flex-wrap gap-1 mt-1 mb-2">{m.roles.map((r,i) => <span key={i} className="bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded text-[10px]">{r}</span>)}</div>}{isLeadership(user) ? <><a href={`mailto:${m.email}`} className="text-sm text-gray-500 truncate block hover:text-indigo-600"><i className="fas fa-envelope w-4"></i> {m.email || 'N/A'}</a><a href={`tel:${m.phone}`} className="text-sm text-gray-500 truncate block hover:text-indigo-600"><i className="fas fa-phone w-4"></i> {m.phone || 'N/A'}</a><a href={`https://maps.google.com/?q=${encodeURIComponent(m.address)}`} target="_blank" className="text-sm text-gray-500 truncate block hover:text-indigo-600"><i className="fas fa-home w-4"></i> {m.address || 'N/A'}</a></> : <p className="text-xs text-gray-400 italic mt-2">Contact details hidden</p>}</div></div>))}</div></div>)))}</div>{showModal && <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white p-6 rounded-lg w-full max-w-lg overflow-y-auto"><h3 className="text-xl font-bold mb-4">{editingId ? 'Edit Member' : 'Add New Member'}</h3><form onSubmit={triggerSubmit}><div className="space-y-3"><input className="w-full border p-2 rounded" placeholder="Full Name" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} /><select className="w-full border p-2 rounded" value={form.status} onChange={e => setForm({...form, status: e.target.value})}><option>Active</option><option>Visitor</option><option>Inactive</option></select><input className="w-full border p-2 rounded" placeholder="Email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} /><input className="w-full border p-2 rounded" placeholder="Phone" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /><input className="w-full border p-2 rounded" placeholder="Address" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div><div className="mt-4 flex justify-end space-x-2"><button type="button" onClick={resetForm} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">{editingId ? 'Update' : 'Save'} Member</button></div></form></div></div>}</div>
+            );
         };
 
-        const PrayerWall = ({ user, prayersDB }) => { /* ... (Same as previous PrayerWall component, condensed) */ 
+        const PrayerWall = ({ user, prayersDB }) => { 
              const prayers = prayersDB.data;
             const [request, setRequest] = useState('');
             const [isAnonymous, setIsAnonymous] = useState(false);
@@ -667,10 +861,48 @@
             const triggerSubmit = (e) => { e.preventDefault(); setConfirm({ isOpen: true, msg: 'Submit prayer request?', action: () => { prayersDB.add({ userId: user.id, authorName: user.name, content: request, date: new Date().toISOString(), status: 'Open', isAnonymous }).then(() => setRequest('')); }}); };
             const toggleStatus = (p) => { prayersDB.update(p.id, { ...p, status: p.status === 'Open' ? 'Prayed For' : 'Open' }); };
             const visiblePrayers = prayers.filter(p => { const canSee = user.role === 'admin' || user.positions?.includes('Pastor') || p.userId === user.id; if (!canSee) return false; return activeTab === 'open' ? p.status === 'Open' : p.status === 'Prayed For'; });
-            return (<div className="p-6"><ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} /><h2 className="text-2xl font-bold mb-6 text-gray-800">Prayer Wall</h2><div className="bg-white p-6 rounded-lg shadow mb-8"><h3 className="text-lg font-bold mb-2">Submit a Prayer Request</h3><form onSubmit={triggerSubmit}><textarea className="w-full border p-3 rounded mb-3 focus:outline-none focus:border-indigo-500" rows="3" placeholder="How can we pray for you?" value={request} onChange={e => setRequest(e.target.value)} required></textarea><div className="flex items-center justify-between"><label className="flex items-center text-sm text-gray-600"><input type="checkbox" className="mr-2" checked={isAnonymous} onChange={e => setIsAnonymous(e.target.checked)} /> Keep Anonymous</label><button type="submit" className="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700">Submit Request</button></div></form></div><div className="flex border-b mb-4"><button className={`px-4 py-2 font-medium ${activeTab === 'open' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500'}`} onClick={() => setActiveTab('open')}>New Prayers</button><button className={`px-4 py-2 font-medium ${activeTab === 'prayed' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500'}`} onClick={() => setActiveTab('prayed')}>Prayed For</button></div><div className="space-y-4">{visiblePrayers.map(p => (<div key={p.id} className={`p-4 rounded-lg border-l-4 shadow-sm bg-white ${p.status === 'Open' ? 'border-yellow-400' : 'border-green-500'}`}><div className="flex justify-between items-start"><div><p className="text-gray-800 mb-2">{p.content}</p><div className="text-xs text-gray-400"><span><i className="far fa-clock"></i> {formatDate(p.date)}</span> • <span>{p.isAnonymous ? "Anonymous" : p.authorName}</span></div></div>{user.role === 'admin' || user.positions?.includes('Pastor') ? <button onClick={() => toggleStatus(p)} className={`text-xs px-2 py-1 rounded ${p.status === 'Open' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>{p.status === 'Open' ? 'Mark Prayed' : 'Re-Open'}</button> : <span className={`text-xs px-2 py-1 rounded ${p.status === 'Open' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>{p.status}</span>}</div></div>))}</div></div>);
+            return (
+                <div className="p-6">
+                    <ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} />
+                    <h2 className="text-2xl font-bold mb-6 text-gray-800">Prayer Wall</h2>
+                    <div className="bg-white p-6 rounded-lg shadow mb-8">
+                        <h3 className="text-lg font-bold mb-2">Submit a Prayer Request</h3>
+                        <form onSubmit={triggerSubmit}>
+                            <textarea className="w-full border p-3 rounded mb-3 focus:outline-none focus:border-indigo-500" rows="3" placeholder="How can we pray for you?" value={request} onChange={e => setRequest(e.target.value)} required></textarea>
+                            <div className="flex items-center justify-between">
+                                <label className="flex items-center text-sm text-gray-600">
+                                    <input type="checkbox" className="mr-2" checked={isAnonymous} onChange={e => setIsAnonymous(e.target.checked)} /> Keep Anonymous
+                                </label>
+                                <button type="submit" className="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700">Submit Request</button>
+                            </div>
+                        </form>
+                    </div>
+                    <div className="flex border-b mb-4">
+                        <button className={`px-4 py-2 font-medium ${activeTab === 'open' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500'}`} onClick={() => setActiveTab('open')}>New Prayers</button>
+                        <button className={`px-4 py-2 font-medium ${activeTab === 'prayed' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500'}`} onClick={() => setActiveTab('prayed')}>Prayed For</button>
+                    </div>
+                    <div className="space-y-4">
+                        {visiblePrayers.map(p => (
+                            <div key={p.id} className={`p-4 rounded-lg border-l-4 shadow-sm bg-white ${p.status === 'Open' ? 'border-yellow-400' : 'border-green-500'}`}>
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <p className="text-gray-800 mb-2">{p.content}</p>
+                                        <div className="text-xs text-gray-400"><span><i className="far fa-clock"></i> {formatDate(p.date)}</span> • <span>{p.isAnonymous ? "Anonymous" : p.authorName}</span></div>
+                                    </div>
+                                    {user.role === 'admin' || user.positions?.includes('Pastor') ? 
+                                        <button onClick={() => toggleStatus(p)} className={`text-xs px-2 py-1 rounded ${p.status === 'Open' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>{p.status === 'Open' ? 'Mark Prayed' : 'Re-Open'}</button> 
+                                        : 
+                                        <span className={`text-xs px-2 py-1 rounded ${p.status === 'Open' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>{p.status}</span>
+                                    }
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
         };
 
-        const Projects = ({ user, projectsDB, financesDB }) => { /* ... (Same as provided Project component, condensed) */ 
+        const Projects = ({ user, projectsDB, financesDB }) => { 
              const projects = projectsDB.data; const finances = financesDB.data;
             const [newProj, setNewProj] = useState({ name: '', department: DEPARTMENTS[0], status: 'Planning', budget: '', imageUrl: '', link: '', comments: [] });
             const [commentInputs, setCommentInputs] = useState({});
@@ -690,19 +922,116 @@
             const saveEditComment = () => { const p = projects.find(x => x.id === editingComment.projId); if(p) { const newComments = [...p.comments]; newComments[editingComment.index] = { ...newComments[editingComment.index], text: editCommentText }; projectsDB.update(p.id, { ...p, comments: newComments }); setEditingComment(null); setEditCommentText(''); } };
             const COLUMNS = ['Planning', 'In Progress', 'Completed'];
             const visibleProjects = projects.filter(p => canView(p.department));
+            
             if (visibleProjects.length === 0 && manageableDepts.length === 0) return <div className="p-6 text-center text-gray-500">You do not have access to view projects for any department.</div>;
+            
             return (
                 <div className="p-6">
                     <ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} />
-                    {editingProject && (<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4"><div className="bg-white p-6 rounded-lg w-full max-w-lg overflow-y-auto max-h-[90vh]"><h3 className="text-xl font-bold mb-4">Edit Project</h3><form onSubmit={triggerUpdateProject}><div className="space-y-3"><div><label className="text-xs font-bold text-gray-500">Name</label><input className="w-full border p-2 rounded" value={editingProject.name} onChange={e => setEditingProject({...editingProject, name: e.target.value})} required /></div><div><label className="text-xs font-bold text-gray-500">Department</label><select className="w-full border p-2 rounded" value={editingProject.department} onChange={e => setEditingProject({...editingProject, department: e.target.value})}>{DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}</select></div><div><label className="text-xs font-bold text-gray-500">Budget</label><input type="number" className="w-full border p-2 rounded" value={editingProject.budget} onChange={e => setEditingProject({...editingProject, budget: e.target.value})} /></div><div><label className="text-xs font-bold text-gray-500">Project Link</label><input type="url" className="w-full border p-2 rounded" value={editingProject.link} onChange={e => setEditingProject({...editingProject, link: e.target.value})} /></div><div><label className="text-xs font-bold text-gray-500">Update Image</label><input type="file" accept="image/*" className="w-full border p-2 rounded text-xs" onChange={(e) => handleImageUpload(e, true)} /></div><div><label className="text-xs font-bold text-gray-500">Status</label><select className="w-full border p-2 rounded" value={editingProject.status} onChange={e => setEditingProject({...editingProject, status: e.target.value})}>{COLUMNS.map(s => <option key={s} value={s}>{s}</option>)}</select></div></div><div className="mt-4 flex justify-end space-x-2"><button type="button" onClick={() => setEditingProject(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Update Project</button></div></form></div></div>)}
+                    
+                    {editingProject && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
+                            <div className="bg-white p-6 rounded-lg w-full max-w-lg overflow-y-auto max-h-[90vh]">
+                                <h3 className="text-xl font-bold mb-4">Edit Project</h3>
+                                <form onSubmit={triggerUpdateProject}>
+                                    <div className="space-y-3">
+                                        <div><label className="text-xs font-bold text-gray-500">Name</label><input className="w-full border p-2 rounded" value={editingProject.name} onChange={e => setEditingProject({...editingProject, name: e.target.value})} required /></div>
+                                        <div><label className="text-xs font-bold text-gray-500">Department</label><select className="w-full border p-2 rounded" value={editingProject.department} onChange={e => setEditingProject({...editingProject, department: e.target.value})}>{DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+                                        <div><label className="text-xs font-bold text-gray-500">Budget</label><input type="number" className="w-full border p-2 rounded" value={editingProject.budget} onChange={e => setEditingProject({...editingProject, budget: e.target.value})} /></div>
+                                        <div><label className="text-xs font-bold text-gray-500">Project Link</label><input type="url" className="w-full border p-2 rounded" value={editingProject.link} onChange={e => setEditingProject({...editingProject, link: e.target.value})} /></div>
+                                        <div><label className="text-xs font-bold text-gray-500">Update Image</label><input type="file" accept="image/*" className="w-full border p-2 rounded text-xs" onChange={(e) => handleImageUpload(e, true)} /></div>
+                                        <div><label className="text-xs font-bold text-gray-500">Status</label><select className="w-full border p-2 rounded" value={editingProject.status} onChange={e => setEditingProject({...editingProject, status: e.target.value})}>{COLUMNS.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                                    </div>
+                                    <div className="mt-4 flex justify-end space-x-2">
+                                        <button type="button" onClick={() => setEditingProject(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                                        <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Update Project</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
                     <h2 className="text-2xl font-bold mb-6 text-gray-800">Department Projects</h2>
-                    {manageableDepts.length > 0 && (<div className="bg-white p-4 rounded-lg shadow mb-8"><h3 className="font-bold text-sm mb-3 text-gray-500 uppercase">Create New Project</h3><form onSubmit={triggerAdd} className="space-y-4"><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="flex-1"><label className="text-xs font-bold text-gray-500">Project Name</label><input className="w-full border p-2 rounded" required value={newProj.name} onChange={e => setNewProj({...newProj, name: e.target.value})} placeholder="e.g. Winter Retreat" /></div><div className="flex-1"><label className="text-xs font-bold text-gray-500">Department</label><select className="w-full border p-2 rounded" value={newProj.department} onChange={e => setNewProj({...newProj, department: e.target.value})}>{manageableDepts.map(d => <option key={d} value={d}>{d}</option>)}</select></div><div className="flex-1"><label className="text-xs font-bold text-gray-500">Est. Budget ($)</label><input type="number" className="w-full border p-2 rounded" required value={newProj.budget} onChange={e => setNewProj({...newProj, budget: e.target.value})} placeholder="0.00" /></div><div className="flex-1"><label className="text-xs font-bold text-gray-500">Status</label><select className="w-full border p-2 rounded" value={newProj.status} onChange={e => setNewProj({...newProj, status: e.target.value})}><option>Planning</option><option>In Progress</option><option>Completed</option></select></div><div className="flex-1"><label className="text-xs font-bold text-gray-500">Link (Optional)</label><input type="url" className="w-full border p-2 rounded" value={newProj.link} onChange={e => setNewProj({...newProj, link: e.target.value})} placeholder="https://..." /></div><div className="flex-1"><label className="text-xs font-bold text-gray-500">Image (Optional)</label><input type="file" accept="image/*" className="w-full border p-2 rounded text-xs" onChange={(e) => handleImageUpload(e, false)} /></div></div><button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 w-full md:w-auto">Add Project</button></form></div>)}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">{COLUMNS.map(col => (<div key={col} className="bg-gray-100 p-4 rounded-lg min-h-[500px]"><h3 className="font-bold text-gray-700 mb-4 border-b pb-2 uppercase text-sm tracking-wide">{col}</h3><div className="space-y-4">{visibleProjects.filter(p => p.status === col).map(p => { const expense = finances.filter(t => t.projectId === p.id && t.type === 'expense').reduce((a,c) => a + parseFloat(c.amount), 0); return (<div key={p.id} className="bg-white p-4 rounded-lg shadow relative group">{canManage(p.department) && (<div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition z-10 bg-white rounded p-1"><button onClick={() => setEditingProject(p)} className="text-gray-400 hover:text-blue-500"><i className="fas fa-edit"></i></button><button onClick={() => triggerDelete(p.id)} className="text-gray-400 hover:text-red-500"><i className="fas fa-trash"></i></button></div>)}{p.imageUrl && <div className="mb-2 h-32 bg-gray-100 rounded overflow-hidden"><img src={p.imageUrl} className="w-full h-full object-cover" alt="Project" /></div>}<span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded mb-1 inline-block">{p.department}</span><h4 className="font-bold text-md mb-2">{p.name}</h4><div className="bg-gray-50 p-2 rounded mb-3 text-xs flex justify-between items-center"><div><span className="text-gray-500 block">Budget</span><span className="font-bold">{formatCurrency(p.budget || 0)}</span></div>{p.link && <a href={p.link} target="_blank" className="text-indigo-600 hover:underline"><i className="fas fa-external-link-alt"></i> Link</a>}</div><div className="mb-3 border-t pt-2"><p className="text-[10px] font-bold text-gray-400 mb-1">COMMENTS</p><div className="max-h-24 overflow-y-auto space-y-1">{(p.comments || []).map((c, i) => (<div key={i} className="text-xs bg-gray-50 p-1.5 rounded relative group/comment">{editingComment?.projId === p.id && editingComment?.index === i ? (<div className="flex items-center"><input className="flex-1 border text-xs p-1 rounded" value={editCommentText} onChange={e => setEditCommentText(e.target.value)} /><button onClick={saveEditComment} className="ml-1 text-green-600"><i className="fas fa-check"></i></button><button onClick={() => setEditingComment(null)} className="ml-1 text-red-600"><i className="fas fa-times"></i></button></div>) : (<div><span className="font-bold text-gray-700">{c.user}: </span>{c.text}{(canManage(p.department) || c.user === user.name) && (<button onClick={() => startEditComment(p.id, i, c.text)} className="absolute top-1 right-1 text-gray-300 hover:text-blue-500 hidden group-hover/comment:block"><i className="fas fa-pencil-alt text-[10px]"></i></button>)}</div>)}</div>))}</div></div><div className="flex gap-1"><input className="flex-1 border text-xs p-1 rounded" placeholder="Comment..." value={commentInputs[p.id] || ''} onChange={e => setCommentInputs({...commentInputs, [p.id]: e.target.value})} /><button onClick={() => addComment(p.id)} className="bg-gray-200 text-xs px-2 rounded hover:bg-gray-300"><i className="fas fa-paper-plane"></i></button></div></div>); })}</div></div>))}</div>
+                    {manageableDepts.length > 0 && (
+                        <div className="bg-white p-4 rounded-lg shadow mb-8">
+                            <h3 className="font-bold text-sm mb-3 text-gray-500 uppercase">Create New Project</h3>
+                            <form onSubmit={triggerAdd} className="space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="flex-1"><label className="text-xs font-bold text-gray-500">Project Name</label><input className="w-full border p-2 rounded" required value={newProj.name} onChange={e => setNewProj({...newProj, name: e.target.value})} placeholder="e.g. Winter Retreat" /></div>
+                                    <div className="flex-1"><label className="text-xs font-bold text-gray-500">Department</label><select className="w-full border p-2 rounded" value={newProj.department} onChange={e => setNewProj({...newProj, department: e.target.value})}>{manageableDepts.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+                                    <div className="flex-1"><label className="text-xs font-bold text-gray-500">Est. Budget ($)</label><input type="number" className="w-full border p-2 rounded" required value={newProj.budget} onChange={e => setNewProj({...newProj, budget: e.target.value})} placeholder="0.00" /></div>
+                                    <div className="flex-1"><label className="text-xs font-bold text-gray-500">Status</label><select className="w-full border p-2 rounded" value={newProj.status} onChange={e => setNewProj({...newProj, status: e.target.value})}><option>Planning</option><option>In Progress</option><option>Completed</option></select></div>
+                                    <div className="flex-1"><label className="text-xs font-bold text-gray-500">Link (Optional)</label><input type="url" className="w-full border p-2 rounded" value={newProj.link} onChange={e => setNewProj({...newProj, link: e.target.value})} placeholder="https://..." /></div>
+                                    <div className="flex-1"><label className="text-xs font-bold text-gray-500">Image (Optional)</label><input type="file" accept="image/*" className="w-full border p-2 rounded text-xs" onChange={(e) => handleImageUpload(e, false)} /></div>
+                                </div>
+                                <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 w-full md:w-auto">Add Project</button>
+                            </form>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {COLUMNS.map(col => (
+                            <div key={col} className="bg-gray-100 p-4 rounded-lg min-h-[500px]">
+                                <h3 className="font-bold text-gray-700 mb-4 border-b pb-2 uppercase text-sm tracking-wide">{col}</h3>
+                                <div className="space-y-4">
+                                    {visibleProjects.filter(p => p.status === col).map(p => { 
+                                        const expense = finances.filter(t => t.projectId === p.id && t.type === 'expense').reduce((a,c) => a + parseFloat(c.amount), 0); 
+                                        return (
+                                            <div key={p.id} className="bg-white p-4 rounded-lg shadow relative group">
+                                                {canManage(p.department) && (
+                                                    <div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition z-10 bg-white rounded p-1">
+                                                        <button onClick={() => setEditingProject(p)} className="text-gray-400 hover:text-blue-500"><i className="fas fa-edit"></i></button>
+                                                        <button onClick={() => triggerDelete(p.id)} className="text-gray-400 hover:text-red-500"><i className="fas fa-trash"></i></button>
+                                                    </div>
+                                                )}
+                                                {p.imageUrl && <div className="mb-2 h-32 bg-gray-100 rounded overflow-hidden"><img src={p.imageUrl} className="w-full h-full object-cover" alt="Project" /></div>}
+                                                <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded mb-1 inline-block">{p.department}</span>
+                                                <h4 className="font-bold text-md mb-2">{p.name}</h4>
+                                                <div className="bg-gray-50 p-2 rounded mb-3 text-xs flex justify-between items-center">
+                                                    <div><span className="text-gray-500 block">Budget</span><span className="font-bold">{formatCurrency(p.budget || 0)}</span></div>
+                                                    {p.link && <a href={p.link} target="_blank" className="text-indigo-600 hover:underline"><i className="fas fa-external-link-alt"></i> Link</a>}
+                                                </div>
+                                                <div className="mb-3 border-t pt-2">
+                                                    <p className="text-[10px] font-bold text-gray-400 mb-1">COMMENTS</p>
+                                                    <div className="max-h-24 overflow-y-auto space-y-1">
+                                                        {(p.comments || []).map((c, i) => (
+                                                            <div key={i} className="text-xs bg-gray-50 p-1.5 rounded relative group/comment">
+                                                                {editingComment?.projId === p.id && editingComment?.index === i ? (
+                                                                    <div className="flex items-center">
+                                                                        <input className="flex-1 border text-xs p-1 rounded" value={editCommentText} onChange={e => setEditCommentText(e.target.value)} />
+                                                                        <button onClick={saveEditComment} className="ml-1 text-green-600"><i className="fas fa-check"></i></button>
+                                                                        <button onClick={() => setEditingComment(null)} className="ml-1 text-red-600"><i className="fas fa-times"></i></button>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div>
+                                                                        <span className="font-bold text-gray-700">{c.user}: </span>{c.text}
+                                                                        {(canManage(p.department) || c.user === user.name) && (
+                                                                            <button onClick={() => startEditComment(p.id, i, c.text)} className="absolute top-1 right-1 text-gray-300 hover:text-blue-500 hidden group-hover/comment:block">
+                                                                                <i className="fas fa-pencil-alt text-[10px]"></i>
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-1">
+                                                    <input className="flex-1 border text-xs p-1 rounded" placeholder="Comment..." value={commentInputs[p.id] || ''} onChange={e => setCommentInputs({...commentInputs, [p.id]: e.target.value})} />
+                                                    <button onClick={() => addComment(p.id)} className="bg-gray-200 text-xs px-2 rounded hover:bg-gray-300"><i className="fas fa-paper-plane"></i></button>
+                                                </div>
+                                            </div>
+                                        ); 
+                                    })}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             );
         };
 
-        const Calendar = ({ user, eventsDB }) => { /* ... (Same as provided Calendar component, condensed) */ 
+        const Calendar = ({ user, eventsDB }) => { 
             const events = eventsDB.data;
             const [newEvent, setNewEvent] = useState({ title: '', startDate: '', endDate: '', time: '', type: 'Event' });
             const [confirm, setConfirm] = useState({ isOpen: false, msg: '', action: null });
@@ -714,7 +1043,7 @@
             return (<div className="p-6"><ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} /><AttendeesModal isOpen={!!viewingAttendees} attendees={getAttendeesList()} onClose={() => setViewingAttendees(null)} /><h2 className="text-2xl font-bold mb-6 text-gray-800">Church Calendar</h2><div className="flex flex-col lg:flex-row gap-6">{user.role === 'admin' && (<div className="lg:w-1/3 bg-white p-6 rounded-lg shadow h-fit"><h3 className="font-bold text-lg mb-4">Add Event</h3><form onSubmit={triggerAdd}><div className="mb-3"><label className="text-xs font-bold text-gray-500">Title</label><input className="w-full border p-2 rounded" required value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} /></div><div className="mb-3"><label className="text-xs font-bold text-gray-500">Type</label><select className="w-full border p-2 rounded" value={newEvent.type} onChange={e => setNewEvent({...newEvent, type: e.target.value})}><option>Event</option><option>Meeting</option></select></div><div className="mb-3"><label className="text-xs font-bold text-gray-500">Start Date</label><input type="date" className="w-full border p-2 rounded" required value={newEvent.startDate} onChange={e => setNewEvent({...newEvent, startDate: e.target.value})} /></div><div className="mb-3"><label className="text-xs font-bold text-gray-500">End Date (Optional)</label><input type="date" className="w-full border p-2 rounded" value={newEvent.endDate} onChange={e => setNewEvent({...newEvent, endDate: e.target.value})} /></div><div className="mb-3"><label className="text-xs font-bold text-gray-500">Time</label><input type="time" className="w-full border p-2 rounded" required value={newEvent.time} onChange={e => setNewEvent({...newEvent, time: e.target.value})} /></div><button type="submit" className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700">Create Event</button></form></div>)}<div className="flex-1 space-y-4">{events.map(ev => (<div key={ev.id} className="bg-white p-4 rounded-lg shadow flex flex-col md:flex-row md:items-center"><div className="flex items-center flex-1"><div className="bg-red-50 text-red-600 p-3 rounded-lg text-center min-w-[80px] mr-4"><div className="text-xs font-bold uppercase">{new Date(ev.startDate).toLocaleString('default', { month: 'short' })}</div><div className="text-2xl font-bold">{new Date(ev.startDate).getDate()}</div></div><div className="flex-1"><div className="flex items-center space-x-2"><span className={`text-[10px] px-2 py-0.5 rounded font-bold ${ev.type === 'Meeting' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{ev.type || 'Event'}</span><h4 className="font-bold text-lg text-gray-800">{ev.title}</h4></div><div className="text-sm text-gray-500 flex flex-col"><span><i className="far fa-clock"></i> {formatTime12(ev.time)}</span>{ev.startDate !== ev.endDate && <span className="text-xs text-indigo-600 font-bold">Ends: {formatDate(ev.endDate)}</span>}</div><div className="mt-2 text-xs text-gray-600"><button onClick={() => setViewingAttendees(ev.id)} className="font-bold hover:text-indigo-600"><i className="fas fa-users"></i> {(ev.attendees || []).length} Joining (View All)</button></div></div></div><div className="flex items-center justify-end mt-4 md:mt-0 md:ml-4 gap-3"><button onClick={() => toggleAttendance(ev)} className={`px-4 py-2 rounded text-sm font-bold transition ${(ev.attendees || []).includes(user.name) ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'}`}>{(ev.attendees || []).includes(user.name) ? 'Leave' : 'Join'}</button>{user.role === 'admin' && <button onClick={() => triggerDelete(ev.id)} className="text-gray-300 hover:text-red-500"><i className="fas fa-trash"></i></button>}</div></div>))}</div></div></div>);
         };
 
-        const ChurchInfo = ({ user, infoDB }) => { /* ... (Same as provided ChurchInfo component, condensed) */ 
+        const ChurchInfo = ({ user, infoDB }) => { 
              const [info, setInfo] = useState(JSON.parse(localStorage.getItem('cm_info') || JSON.stringify(INITIAL_INFO)));
             const [activeTab, setActiveTab] = useState('about');
             const [isEditing, setIsEditing] = useState(false);
@@ -744,7 +1073,7 @@
             );
         };
 
-        const Settings = ({ user, usersDB, membersDB }) => { /* ... (Same as provided Settings component, condensed) */ 
+        const Settings = ({ user, usersDB, membersDB }) => { 
             const users = usersDB.data; const members = membersDB.data;
             const [editingUserId, setEditingUserId] = useState(null);
             const [newUser, setNewUser] = useState({ username: '', password: '', name: '', role: 'member', authorizedDepartments: [], positions: [] });
@@ -756,7 +1085,83 @@
             const handleEditUser = (u) => { setEditingUserId(u.id); setNewUser({ username: u.username, password: u.password, name: u.name, role: u.role, authorizedDepartments: u.authorizedDepartments || [], positions: u.positions || [] }); window.scrollTo({ top: 0, behavior: 'smooth' }); };
             const triggerDelete = (id) => { setConfirm({ isOpen: true, msg: 'Permanently delete this user account?', action: () => { usersDB.remove(id); if (editingUserId === id) cancelEdit(); }}); };
             const cancelEdit = () => { setEditingUserId(null); setNewUser({ username: '', password: '', name: '', role: 'member', authorizedDepartments: [], positions: [] }); setErrorMsg(''); };
-            const triggerSubmit = (e) => { e.preventDefault(); setErrorMsg(''); const action = editingUserId ? "update" : "create"; if (!editingUserId && users.find(u => u.username === newUser.username)) { setErrorMsg('Username already exists'); return; } setConfirm({ isOpen: true, msg: `Are you sure you want to ${action} this account?`, action: () => { if (editingUserId) { usersDB.update(editingUserId, newUser).then(cancelEdit); } else { usersDB.add(newUser); const existingMember = members.find(m => m.name === newUser.name); if (!existingMember) { membersDB.add({ name: newUser.name, roles: newUser.positions, status: 'Active', email: '', phone: '', address: '' }); } setNewUser({ username: '', password: '', name: '', role: 'member', authorizedDepartments: [], positions: [] }); } }}); };
+            
+            const triggerSubmit = (e) => { 
+                e.preventDefault(); 
+                setErrorMsg(''); 
+                
+                // Check for duplicate username (excluding current user if editing)
+                const duplicateUser = users.find(u => u.username === newUser.username && u.id !== editingUserId);
+                if (duplicateUser) { 
+                    setErrorMsg('Username already exists'); 
+                    return; 
+                } 
+
+                if (editingUserId) {
+                    // --- STRICT UPDATE PATH ---
+                    // This block ONLY runs if we are editing an existing user
+                    
+                    // Capture original user to find the linked member record (since name might change)
+                    const originalUser = users.find(u => u.id === editingUserId);
+
+                    setConfirm({ 
+                        isOpen: true, 
+                        msg: `Update account details for ${newUser.name}?`, 
+                        action: () => { 
+                            usersDB.update(editingUserId, newUser)
+                                .then(() => {
+                                    // --- SYNC LOGIC: Update corresponding Member/Congregation Record ---
+                                    if (originalUser) {
+                                        // Find the member record associated with the OLD name
+                                        // We use the old name because the 'name' field in 'newUser' might be different now
+                                        const linkedMember = members.find(m => m.name === originalUser.name);
+                                        
+                                        if (linkedMember) {
+                                            // Update existing member
+                                            membersDB.update(linkedMember.id, {
+                                                ...linkedMember,
+                                                name: newUser.name,     // Sync name change
+                                                roles: newUser.positions // Sync updated roles
+                                            });
+                                        } else {
+                                            // Fallback: If they were not in the directory for some reason, add them now
+                                            membersDB.add({ 
+                                                name: newUser.name, 
+                                                roles: newUser.positions, 
+                                                status: 'Active', 
+                                                email: '', 
+                                                phone: '', 
+                                                address: '' 
+                                            });
+                                        }
+                                    }
+                                    cancelEdit();
+                                })
+                                .catch(err => setErrorMsg("Update failed: " + err.message));
+                        }
+                    }); 
+                } else {
+                    // --- STRICT CREATE PATH ---
+                    // This block ONLY runs if we are creating a new user (no editingUserId)
+                    setConfirm({ 
+                        isOpen: true, 
+                        msg: `Create new account for ${newUser.name}?`, 
+                        action: () => { 
+                            usersDB.add(newUser)
+                                .then(() => {
+                                    // Sync: Create a corresponding member record if one doesn't exist
+                                    const existingMember = members.find(m => m.name === newUser.name); 
+                                    if (!existingMember) { 
+                                        membersDB.add({ name: newUser.name, roles: newUser.positions, status: 'Active', email: '', phone: '', address: '' }); 
+                                    } 
+                                    setNewUser({ username: '', password: '', name: '', role: 'member', authorizedDepartments: [], positions: [] }); 
+                                })
+                                .catch(err => setErrorMsg("Creation failed: " + err.message));
+                        } 
+                    }); 
+                }
+            };
+
             return (<div className="p-6"><ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} /><h2 className="text-2xl font-bold mb-6 text-gray-800">System Settings</h2><div className="bg-white p-6 rounded-lg shadow border-t-4 border-indigo-600"><div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold">{editingUserId ? 'Edit User Account' : 'Create New Account'}</h3>{editingUserId && <button onClick={cancelEdit} className="text-sm text-gray-500 hover:text-gray-700">Cancel Edit</button>}</div>{errorMsg && <div className="bg-red-100 text-red-700 p-2 rounded mb-3 text-sm">{errorMsg}</div>}<form onSubmit={triggerSubmit}><div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4"><input className="border p-2 rounded" placeholder="Full Name" required value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} /><input className="border p-2 rounded" placeholder="Username" required value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} /><div className="relative"><input className="w-full border p-2 rounded" type={showPassword ? "text" : "password"} placeholder="Password" required value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-2 text-gray-500 hover:text-indigo-600 focus:outline-none"><i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i></button></div><div><select className="w-full border p-2 rounded bg-gray-50" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}><option value="member">Role: Member</option><option value="treasurer">Role: Treasurer</option><option value="admin">Role: Admin</option></select></div></div>{newUser.role === 'treasurer' && <div className="mb-4 bg-yellow-50 p-4 rounded border border-yellow-100"><label className="block text-xs font-bold text-yellow-800 mb-2">Select Accessible Funds:</label><div className="grid grid-cols-2 md:grid-cols-4 gap-2">{DEPARTMENTS.map(dept => (<label key={dept} className="flex items-center text-sm cursor-pointer"><input type="checkbox" className="mr-2" checked={newUser.authorizedDepartments.includes(dept)} onChange={() => toggleAuthDept(dept)} />{dept}</label>))}</div></div>}<div className="mb-6"><label className="block text-sm font-bold text-gray-700 mb-2">Assign Church Roles</label><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 border p-4 rounded bg-gray-50 max-h-64 overflow-y-auto">{Object.entries(CHURCH_STRUCTURE).map(([category, roles]) => (<div key={category} className="mb-2"><h4 className="text-xs font-bold text-indigo-600 uppercase mb-1 border-b border-indigo-100 pb-1">{category}</h4>{roles.map(role => (<label key={role} className="flex items-center text-sm py-1 hover:bg-gray-100 rounded px-1 cursor-pointer"><input type="checkbox" className="mr-2" checked={newUser.positions.includes(role)} onChange={() => togglePosition(role)} />{role}</label>))}</div>))}</div></div><button type="submit" className={`w-full text-white px-6 py-3 rounded font-bold ${editingUserId ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>{editingUserId ? 'Update Account' : 'Create Account'}</button></form><div className="mt-8 border-t pt-4"><h4 className="font-bold text-sm text-gray-500 mb-2">Existing System Users</h4><div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto">{users.map(u => (<div key={u.id} className={`p-3 bg-gray-50 rounded border flex justify-between items-center text-sm ${editingUserId === u.id ? 'border-green-500 border-2' : ''}`}><div><span className="font-bold">{u.name}</span> <span className="text-gray-400 text-xs ml-2">@{u.username}</span></div><div className="flex gap-2"><button onClick={() => handleEditUser(u)} className="text-blue-500 hover:text-blue-700 p-1"><i className="fas fa-edit"></i></button>{u.id !== 1 && <button onClick={() => triggerDelete(u.id)} className="text-red-500 hover:text-red-700 p-1"><i className="fas fa-trash"></i></button>}</div></div>))}</div></div></div></div>);
         };
 
@@ -775,13 +1180,13 @@
             useEffect(() => {
                 const initAuth = async () => {
                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                        await auth.signInWithCustomToken(__initial_auth_token);
+                        await signInWithCustomToken(auth, __initial_auth_token);
                     } else {
-                        await auth.signInAnonymously();
+                        await signInAnonymously(auth);
                     }
                 };
                 initAuth();
-                const unsubscribe = auth.onAuthStateChanged(u => {
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
                     setFirebaseUser(u);
                 });
                 return () => unsubscribe();
