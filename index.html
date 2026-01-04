@@ -7,11 +7,11 @@
     
     <!-- PWA Manifest & Icons -->
     <link rel="manifest" href="manifest.json">
-    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/2907/2907253.png">
+    <link rel="icon" type="image/png" href="icon-512.png">
     <meta name="theme-color" content="#4f46e5">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2907/2907253.png">
+    <link rel="apple-touch-icon" href="icon-512.png">
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -148,8 +148,9 @@
             'Pledges': { leaders: ['Church Treasurer'], viewers: ["Pastor", "Deacon", "Elder"] }
         };
 
+        // UPDATED: Changed default password to something less "breached" to avoid Chrome warnings
         const INITIAL_ADMIN = { 
-            username: 'admin', password: 'password123', role: 'admin', name: 'Senior Pastor', 
+            username: 'admin', password: 'admin123!', role: 'admin', name: 'Senior Pastor', 
             authorizedDepartments: DEPARTMENTS, positions: ['Pastor'] 
         };
 
@@ -387,16 +388,19 @@
             return (
                 <div className="min-h-screen flex items-center justify-center bg-gray-100">
                     <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
-                        <div className="text-center mb-8"><div className="w-20 h-20 mx-auto mb-4 bg-indigo-600 rounded-full flex items-center justify-center text-white text-4xl"><i className="fas fa-church"></i></div><h2 className="text-2xl font-bold text-gray-800">Elect Word Ministry</h2><p className="text-gray-500">Sign in to your account</p></div>
+                        <div className="text-center mb-8">
+                            <img src="icon-512.png" alt="Logo" className="w-20 h-20 mx-auto mb-4 rounded-xl shadow-lg object-cover" />
+                            <h2 className="text-2xl font-bold text-gray-800">Elect Word Ministry</h2><p className="text-gray-500">Sign in to your account</p>
+                        </div>
                         {loading ? <p className="text-center text-indigo-600 font-bold animate-pulse">Loading System Data...</p> : (
-                            <form onSubmit={handleSubmit}>
+                            <form onSubmit={handleSubmit} autoComplete="off">
                                 {error && <div className="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm">{error}</div>}
-                                <div className="mb-4"><label className="block text-gray-700 text-sm font-bold mb-2">Username</label><input className="w-full p-3 border rounded" value={username} onChange={e => setUsername(e.target.value)} placeholder="Enter username (try 'admin')" /></div>
-                                <div className="mb-6 relative"><label className="block text-gray-700 text-sm font-bold mb-2">Password</label><input className="w-full p-3 border rounded" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password (try 'password123')" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-9 text-gray-500 hover:text-indigo-600 focus:outline-none"><i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i></button></div>
+                                <div className="mb-4"><label className="block text-gray-700 text-sm font-bold mb-2">Username</label><input className="w-full p-3 border rounded" value={username} onChange={e => setUsername(e.target.value)} placeholder="Enter username (try 'admin')" autoComplete="off" /></div>
+                                <div className="mb-6 relative"><label className="block text-gray-700 text-sm font-bold mb-2">Password</label><input className="w-full p-3 border rounded" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password (try 'admin123!')" autoComplete="new-password" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-9 text-gray-500 hover:text-indigo-600 focus:outline-none"><i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i></button></div>
                                 <button className="w-full bg-indigo-600 text-white p-3 rounded hover:bg-indigo-700 font-bold transition">Sign In</button>
                             </form>
                         )}
-                        <p className="text-xs text-gray-400 mt-4 text-center">Default: admin / password123</p>
+                        <p className="text-xs text-gray-400 mt-4 text-center">Default: admin / admin123!</p>
                     </div>
                 </div>
             );
@@ -443,19 +447,19 @@
 
             useEffect(() => { const doc = infoDB.data.find(d => d.id === 'main'); if (doc) setLocalInfo(doc); }, [infoDB.data]);
 
-            // UPDATED VERSE LOGIC: Deterministic Daily Verse
+            // UPDATED VERSE LOGIC: Deterministic Daily Verse - CHANGED TO KJV
             const verse = useMemo(() => {
                 const VERSES = [
-                    { text: "For I know the plans I have for you, declares the LORD, plans for welfare and not for evil, to give you a future and a hope.", ref: "Jeremiah 29:11" },
-                    { text: "I can do all things through him who strengthens me.", ref: "Philippians 4:13" },
-                    { text: "Trust in the LORD with all your heart, and do not lean on your own understanding.", ref: "Proverbs 3:5" },
-                    { text: "The LORD is my shepherd; I shall not want.", ref: "Psalm 23:1" },
-                    { text: "But they who wait for the LORD shall renew their strength; they shall mount up with wings like eagles...", ref: "Isaiah 40:31" },
-                    { text: "Be strong and courageous. Do not be frightened, and do not be dismayed, for the LORD your God is with you wherever you go.", ref: "Joshua 1:9" },
-                    { text: "And we know that for those who love God all things work together for good...", ref: "Romans 8:28" },
-                    { text: "The LORD is my light and my salvation; whom shall I fear?", ref: "Psalm 27:1" },
-                    { text: "Cast all your anxiety on him because he cares for you.", ref: "1 Peter 5:7" },
-                    { text: "This is the day that the LORD has made; let us rejoice and be glad in it.", ref: "Psalm 118:24" }
+                    { text: "For I know the thoughts that I think toward you, saith the LORD, thoughts of peace, and not of evil, to give you an expected end.", ref: "Jeremiah 29:11 (KJV)" },
+                    { text: "I can do all things through Christ which strengtheneth me.", ref: "Philippians 4:13 (KJV)" },
+                    { text: "Trust in the LORD with all thine heart; and lean not unto thine own understanding.", ref: "Proverbs 3:5 (KJV)" },
+                    { text: "The LORD is my shepherd; I shall not want.", ref: "Psalm 23:1 (KJV)" },
+                    { text: "But they that wait upon the LORD shall renew their strength; they shall mount up with wings as eagles...", ref: "Isaiah 40:31 (KJV)" },
+                    { text: "Have not I commanded thee? Be strong and of a good courage; be not afraid, neither be thou dismayed...", ref: "Joshua 1:9 (KJV)" },
+                    { text: "And we know that all things work together for good to them that love God...", ref: "Romans 8:28 (KJV)" },
+                    { text: "The LORD is my light and my salvation; whom shall I fear?", ref: "Psalm 27:1 (KJV)" },
+                    { text: "Casting all your care upon him; for he careth for you.", ref: "1 Peter 5:7 (KJV)" },
+                    { text: "This is the day which the LORD hath made; we will rejoice and be glad in it.", ref: "Psalm 118:24 (KJV)" }
                 ];
                 const now = new Date();
                 const start = new Date(now.getFullYear(), 0, 0);
@@ -779,8 +783,8 @@
                                 {/* 3. Recent Global Activity */}
                                 <div>
                                     <h3 className="text-lg font-bold text-gray-700 mb-4 border-b pb-2">Recent Activity (All Funds)</h3>
-                                    <div className="bg-white rounded-lg shadow overflow-hidden">
-                                        <table className="w-full text-left">
+                                    <div className="bg-white rounded-lg shadow overflow-x-auto">
+                                        <table className="w-full text-left min-w-[600px]">
                                             <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                                                 <tr>
                                                     <th className="p-3 font-semibold">Date</th>
@@ -798,7 +802,7 @@
                                                     <tr key={t.id} className="border-b hover:bg-gray-50 text-sm">
                                                         <td className="p-3 whitespace-nowrap text-gray-500">{formatDate(t.date)}</td>
                                                         <td className="p-3"><span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-bold">{t.department}</span></td>
-                                                        <td className="p-3 text-gray-700">{t.description}</td>
+                                                        <td className="p-3 text-gray-700 max-w-xs truncate">{t.description}</td>
                                                         <td className={`p-3 text-right font-bold ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
                                                             {t.type === 'expense' ? '-' : ''}{formatCurrency(t.amount)}
                                                         </td>
@@ -881,12 +885,12 @@
                                     )}
 
                                     {/* Transactions Table */}
-                                    <div className="lg:w-2/3 bg-white rounded-lg shadow overflow-hidden flex-1">
-                                        <table className="w-full text-left border-collapse">
+                                    <div className="lg:w-2/3 bg-white rounded-lg shadow overflow-x-auto flex-1">
+                                        <table className="w-full text-left border-collapse min-w-[600px]">
                                             <thead className="bg-gray-50">
                                                 <tr>
                                                     <th className="p-3 text-xs font-bold text-gray-600 border-b">Date</th>
-                                                    <th className="p-3 text-xs font-bold text-gray-600 border-b">Desc</th>
+                                                    <th className="p-3 text-xs font-bold text-gray-600 border-b">Description</th>
                                                     <th className="p-3 text-xs font-bold text-gray-600 border-b text-right">Amount</th>
                                                     <th className="p-3 text-xs font-bold text-gray-600 border-b text-center">Action</th>
                                                 </tr>
@@ -899,7 +903,7 @@
                                                         <tr key={t.id} className={`hover:bg-gray-50 border-b ${editingId === t.id ? 'bg-blue-50' : ''}`}>
                                                             <td className="p-3 text-sm whitespace-nowrap">{formatDate(t.date)}</td>
                                                             <td className="p-3 text-sm">
-                                                                <div className="font-medium">{t.description}</div>
+                                                                <div className="font-medium max-w-xs truncate">{t.description}</div>
                                                                 {t.projectId && <div className="text-xs text-indigo-600 mt-0.5">Project: {projects.find(p=>p.id == t.projectId)?.name}</div>}
                                                             </td>
                                                             <td className={`p-3 text-sm font-bold text-right ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
@@ -954,7 +958,6 @@
                                 </p>
                             )}
                         </div>
-                        {/* Add Member button removed as requested */}
                     </div>
 
                     <div className="space-y-8">{Object.entries(groupedMembers).map(([dept, deptMembers]) => (deptMembers.length > 0 && (<div key={dept}><h3 className="text-lg font-bold text-indigo-800 border-b border-indigo-200 pb-2 mb-4 uppercase tracking-wide">{dept}</h3><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{deptMembers.map(m => (<div key={m.id} className="bg-white p-4 rounded-lg shadow flex items-start space-x-4 relative group">{user.role === 'admin' && (<div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition z-10 bg-white rounded p-1"><button onClick={() => handleEdit(m)} className="text-blue-500 hover:text-blue-700"><i className="fas fa-edit"></i></button><button onClick={() => triggerDelete(m.id)} className="text-red-500 hover:text-red-700"><i className="fas fa-trash"></i></button></div>)}<div className="bg-indigo-100 rounded-full w-12 h-12 flex items-center justify-center text-indigo-600 font-bold text-xl flex-shrink-0">{m.name.charAt(0)}</div><div className="flex-1 min-w-0"><div className="flex justify-between items-start"><h3 className="font-bold text-gray-800 truncate">{m.name}</h3></div><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${m.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{m.status}</span>{m.roles && m.roles.length > 0 && <div className="flex flex-wrap gap-1 mt-1 mb-2">{m.roles.map((r,i) => <span key={i} className="bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded text-[10px]">{r}</span>)}</div>}{isLeadership(user) ? <><a href={`mailto:${m.email}`} className="text-sm text-gray-500 truncate block hover:text-indigo-600"><i className="fas fa-envelope w-4"></i> {m.email || 'N/A'}</a><a href={`tel:${m.phone}`} className="text-sm text-gray-500 truncate block hover:text-indigo-600"><i className="fas fa-phone w-4"></i> {m.phone || 'N/A'}</a><a href={`https://maps.google.com/?q=${encodeURIComponent(m.address)}`} target="_blank" className="text-sm text-gray-500 truncate block hover:text-indigo-600"><i className="fas fa-home w-4"></i> {m.address || 'N/A'}</a></> : <p className="text-xs text-gray-400 italic mt-2">Contact details hidden</p>}</div></div>))}</div></div>)))}</div>{showModal && <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"><div className="bg-white p-6 rounded-lg w-full max-w-lg overflow-y-auto"><h3 className="text-xl font-bold mb-4">{editingId ? 'Edit Member' : 'Add New Member'}</h3><form onSubmit={triggerSubmit}><div className="space-y-3"><input className="w-full border p-2 rounded" placeholder="Full Name" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} /><select className="w-full border p-2 rounded" value={form.status} onChange={e => setForm({...form, status: e.target.value})}><option>Active</option><option>Visitor</option><option>Inactive</option></select><input className="w-full border p-2 rounded" placeholder="Email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} /><input className="w-full border p-2 rounded" placeholder="Phone" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /><input className="w-full border p-2 rounded" placeholder="Address" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div><div className="mt-4 flex justify-end space-x-2"><button type="button" onClick={resetForm} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">{editingId ? 'Update' : 'Save'} Member</button></div></form></div></div>}</div>
@@ -1170,7 +1173,48 @@
                     case 'mission': return <div className="space-y-4"><div><label className="block text-xs font-bold text-gray-500">Mission</label>{isEditing ? <textarea className="w-full border p-2 rounded" rows="3" value={localInfo.mission} onChange={e => setLocalInfo({...localInfo, mission: e.target.value})} /> : <p className="italic">"{localInfo.mission}"</p>}</div><div><label className="block text-xs font-bold text-gray-500">Vision</label>{isEditing ? <textarea className="w-full border p-2 rounded" rows="3" value={localInfo.vision} onChange={e => setLocalInfo({...localInfo, vision: e.target.value})} /> : <p className="italic">"{localInfo.vision}"</p>}</div></div>;
                     case 'pastor': return <div className="space-y-4"><h3 className="font-bold">Our Senior Pastor</h3><div className="flex flex-col md:flex-row gap-4 items-start"><div className="w-full md:w-1/3">{localInfo.pastorImage ? <img src={localInfo.pastorImage} alt="Pastor" className="w-full h-auto rounded-lg shadow-md mb-2" /> : <div className="w-full h-48 bg-gray-200 rounded-lg flex items-center justify-center text-gray-500 mb-2"><i className="fas fa-user text-4xl"></i></div>}{isEditing && <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'pastorImage')} className="text-xs w-full" />}</div><div className="w-full md:w-2/3">{isEditing ? <textarea className="w-full border p-2 rounded" rows="6" value={localInfo.pastorBio} onChange={e => setLocalInfo({...localInfo, pastorBio: e.target.value})} /> : <p className="whitespace-pre-wrap text-gray-700">{localInfo.pastorBio}</p>}</div></div></div>;
                     case 'location': return <div className="space-y-4"><div><label className="block text-xs font-bold text-gray-500">Address</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.address} onChange={e => setLocalInfo({...localInfo, address: e.target.value})} /> : <p>{localInfo.address}</p>}</div><div className="h-64 bg-gray-200 rounded overflow-hidden shadow-inner relative"><iframe width="100%" height="100%" frameBorder="0" style={{border:0}} src={`https://maps.google.com/maps?q=${encodeURIComponent(localInfo.address)}&t=&z=15&ie=UTF8&iwloc=&output=embed`} allowFullScreen></iframe></div><a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(localInfo.address)}`} target="_blank" className="block w-full text-center bg-blue-600 text-white py-2 rounded hover:bg-blue-700 font-bold transition"><i className="fas fa-directions mr-2"></i> Get Directions</a></div>;
-                    case 'social': return <div className="space-y-4"><div><label className="block text-xs font-bold text-gray-500">Facebook</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.socials.facebook} onChange={e => setLocalInfo({...localInfo, socials: {...localInfo.socials, facebook: e.target.value}})} /> : <a href={localInfo.socials.facebook} className="text-blue-600 block">{localInfo.socials.facebook || 'Not set'}</a>}</div><div><label className="block text-xs font-bold text-gray-500">YouTube</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.socials.youtube} onChange={e => setLocalInfo({...localInfo, socials: {...localInfo.socials, youtube: e.target.value}})} /> : <a href={localInfo.socials.youtube} className="text-red-600 block">{localInfo.socials.youtube || 'Not set'}</a>}</div></div>;
+                    case 'social': return (
+                        <div className="space-y-6">
+                            {/* Facebook */}
+                            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg shadow-sm">
+                                <div className="flex items-center">
+                                    <i className="fab fa-facebook text-blue-600 text-4xl mr-4"></i>
+                                    <span className="font-bold text-gray-700 text-lg">Facebook</span>
+                                </div>
+                                {isEditing ? 
+                                    <input className="border p-2 rounded text-sm w-1/2" value={localInfo.socials.facebook} onChange={e => setLocalInfo({...localInfo, socials: {...localInfo.socials, facebook: e.target.value}})} placeholder="https://facebook.com/..." /> 
+                                    : 
+                                    (localInfo.socials.facebook ? <a href={localInfo.socials.facebook} target="_blank" className="bg-blue-100 text-blue-600 p-2 rounded-full hover:bg-blue-200 transition"><i className="fas fa-external-link-alt"></i></a> : <span className="text-gray-400 text-xs italic">Not Linked</span>)
+                                }
+                            </div>
+                            
+                            {/* YouTube */}
+                            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg shadow-sm">
+                                <div className="flex items-center">
+                                    <i className="fab fa-youtube text-red-600 text-4xl mr-4"></i>
+                                    <span className="font-bold text-gray-700 text-lg">YouTube</span>
+                                </div>
+                                {isEditing ? 
+                                    <input className="border p-2 rounded text-sm w-1/2" value={localInfo.socials.youtube} onChange={e => setLocalInfo({...localInfo, socials: {...localInfo.socials, youtube: e.target.value}})} placeholder="https://youtube.com/..." /> 
+                                    : 
+                                    (localInfo.socials.youtube ? <a href={localInfo.socials.youtube} target="_blank" className="bg-red-100 text-red-600 p-2 rounded-full hover:bg-red-200 transition"><i className="fas fa-external-link-alt"></i></a> : <span className="text-gray-400 text-xs italic">Not Linked</span>)
+                                }
+                            </div>
+
+                            {/* Instagram */}
+                            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg shadow-sm">
+                                <div className="flex items-center">
+                                    <i className="fab fa-instagram text-pink-600 text-4xl mr-4"></i>
+                                    <span className="font-bold text-gray-700 text-lg">Instagram</span>
+                                </div>
+                                {isEditing ? 
+                                    <input className="border p-2 rounded text-sm w-1/2" value={localInfo.socials.instagram} onChange={e => setLocalInfo({...localInfo, socials: {...localInfo.socials, instagram: e.target.value}})} placeholder="https://instagram.com/..." /> 
+                                    : 
+                                    (localInfo.socials.instagram ? <a href={localInfo.socials.instagram} target="_blank" className="bg-pink-100 text-pink-600 p-2 rounded-full hover:bg-pink-200 transition"><i className="fas fa-external-link-alt"></i></a> : <span className="text-gray-400 text-xs italic">Not Linked</span>)
+                                }
+                            </div>
+                        </div>
+                    );
                 }
             };
             return (
@@ -1280,6 +1324,7 @@
             const [showProfileSetup, setShowProfileSetup] = useState(false);
             const [showProfileEdit, setShowProfileEdit] = useState(false);
             const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+            const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false); // New state for logout confirmation
 
             // -- Firebase Auth Logic for Backend Access --
             // This is separate from the app's internal user login system.
@@ -1299,6 +1344,16 @@
                     setFirebaseUser(u);
                 });
                 return () => unsubscribe();
+            }, []);
+
+            // Window Close/Refresh Warning
+            useEffect(() => {
+                const handleBeforeUnload = (e) => {
+                    e.preventDefault();
+                    e.returnValue = ''; // Required for Chrome to show default warning
+                };
+                window.addEventListener('beforeunload', handleBeforeUnload);
+                return () => window.removeEventListener('beforeunload', handleBeforeUnload);
             }, []);
 
             // -- Load Collections from Firestore --
@@ -1343,7 +1398,17 @@
                 setView('dashboard');
             };
             
-            const handleLogout = () => { setUser(null); sessionStorage.removeItem('cm_current_user'); setView('dashboard'); setIsMobileMenuOpen(false); };
+            const confirmLogout = () => {
+                setLogoutConfirmOpen(true);
+            }
+
+            const executeLogout = () => { 
+                setUser(null); 
+                sessionStorage.removeItem('cm_current_user'); 
+                setView('dashboard'); 
+                setIsMobileMenuOpen(false); 
+                setLogoutConfirmOpen(false);
+            };
             
             // Show loading if firebase auth is initializing
             if (!firebaseUser) return <div className="loading-overlay"><i className="fas fa-circle-notch fa-spin text-4xl text-indigo-600 mb-2"></i><p className="font-bold text-gray-700">Connecting to Database...</p></div>;
@@ -1369,6 +1434,14 @@
 
             return (
                 <div className="flex h-screen overflow-hidden">
+                    {/* Logout Confirmation Modal */}
+                    <ConfirmModal 
+                        isOpen={logoutConfirmOpen} 
+                        message="Are you sure you want to sign out?" 
+                        onConfirm={executeLogout} 
+                        onCancel={() => setLogoutConfirmOpen(false)} 
+                    />
+
                     {anyLoading && !anyError && <div className="loading-overlay"><i className="fas fa-spinner fa-spin text-4xl text-indigo-600 mb-2"></i><p className="font-bold text-gray-700">Loading Data...</p></div>}
                     
                     {anyError && (
@@ -1391,7 +1464,7 @@
 
                     <div className={`fixed inset-y-0 left-0 transform ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"} md:relative md:translate-x-0 transition duration-200 ease-in-out z-30 w-64 bg-white shadow-xl flex flex-col`}>
                         <div className="p-6 border-b flex items-center space-x-3">
-                            <div className="w-10 h-10 rounded bg-indigo-600 flex items-center justify-center text-white text-xl"><i className="fas fa-church"></i></div>
+                            <img src="icon-512.png" alt="App Icon" className="w-10 h-10 rounded-lg shadow-sm object-cover" />
                             <div><h1 className="font-bold text-sm text-gray-800 leading-tight">Elect Word Ministry</h1><p className="text-xs text-gray-500 font-medium">Community Church</p></div>
                         </div>
                         <nav className="flex-1 p-4 overflow-y-auto">
@@ -1414,7 +1487,7 @@
                                 <div className="overflow-hidden"><p className="text-sm font-bold text-gray-800 truncate">{user.name}</p><p className="text-xs text-gray-500 capitalize">{user.role}</p></div>
                                 <i className="fas fa-pencil-alt ml-auto text-gray-400 text-xs"></i>
                             </div>
-                            <button onClick={handleLogout} className="w-full text-sm text-red-600 hover:text-red-800 text-left"><i className="fas fa-sign-out-alt mr-2"></i> Sign Out</button>
+                            <button onClick={confirmLogout} className="w-full text-sm text-red-600 hover:text-red-800 text-left"><i className="fas fa-sign-out-alt mr-2"></i> Sign Out</button>
                         </div>
                     </div>
                     
@@ -1429,7 +1502,7 @@
                                 <span className="text-xs text-gray-500 block">Community Church</span>
                             </div>
                         </div>
-                        <button onClick={handleLogout} className="text-red-600"><i className="fas fa-sign-out-alt"></i></button>
+                        <button onClick={confirmLogout} className="text-red-600"><i className="fas fa-sign-out-alt"></i></button>
                     </div>
 
                     {/* Main Content Area */}
