@@ -23,7 +23,7 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
-    <!-- Firebase SDKs (v9 Compat) -->
+    <!-- Firebase SDKs (v9 Compat for easy React integration without build step) -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
@@ -85,33 +85,40 @@
         // --- Service Worker Registration ---
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then(reg => console.log('Service Worker registered', reg))
-                    .catch(err => console.log('Service Worker registration failed', err));
+                // Simplified for this environment
+                // navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW failed', err));
             });
         }
 
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- FIREBASE CONFIGURATION ---
-        const firebaseConfig = {
-            apiKey: "AIzaSyBjK3NqQ_Mnq0UhwPRTfKvfHqgefea1GE4",
-            authDomain: "ewmwebsite-a9d14.firebaseapp.com",
-            projectId: "ewmwebsite-a9d14",
-            storageBucket: "ewmwebsite-a9d14.firebasestorage.app",
-            messagingSenderId: "105322791826",
-            appId: "1:105322791826:web:ccd09082b15ade6154b74b",
-            measurementId: "G-D5KZY1LJCB"
-        };
+        // --- FIREBASE CONFIGURATION (ADAPTED FOR PREVIEW ENV) ---
+        // Using environment variables provided by the host for seamless DB access
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
+            : {
+                apiKey: "demo-key",
+                authDomain: "demo.firebaseapp.com",
+                projectId: "demo-project",
+            };
 
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
         }
+        
         const db = firebase.firestore();
         const auth = firebase.auth();
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
         try {
-            db.settings({ experimentalForceLongPolling: true });
+            // Enable offline persistence if possible, though strict in iframe
+            db.enablePersistence().catch(err => {
+                if (err.code == 'failed-precondition') {
+                    console.log('Persistence failed: Multiple tabs open');
+                } else if (err.code == 'unimplemented') {
+                    console.log('Persistence not supported');
+                }
+            });
         } catch(err) {
             console.warn("Firestore settings warning:", err);
         }
@@ -172,49 +179,46 @@
             return { view: canView, manage: canManage };
         };
 
-        const useFirestore = (collectionName) => {
+        // --- Custom Hook with Strict Path Adaptation ---
+        const useFirestore = (collectionName, firebaseAuthUser) => {
             const [data, setData] = useState([]);
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
-            const [firebaseUser, setFirebaseUser] = useState(null);
 
             useEffect(() => {
-                const unsubscribeAuth = auth.onAuthStateChanged(async (user) => {
-                    if (user) {
-                        setFirebaseUser(user);
-                    } else {
-                        try {
-                            await auth.signInAnonymously();
-                        } catch (e) {
-                            console.error("Anonymous Sign-in Failed", e);
-                            setError(e); 
-                            setLoading(false); 
-                        }
-                    }
-                });
-                return () => unsubscribeAuth();
-            }, []);
+                if (!firebaseAuthUser) return;
+                
+                // STRICT PATH PATTERN: artifacts/{appId}/public/data/{collectionName}
+                const collectionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection(collectionName);
 
-            useEffect(() => {
-                if (!firebaseUser) return;
-                const unsubscribe = db.collection(collectionName).onSnapshot(snapshot => {
+                const unsubscribe = collectionRef.onSnapshot(snapshot => {
                     const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     setData(items);
                     setLoading(false);
                     setError(null);
                 }, (err) => {
-                    if (err.code === 'permission-denied') console.warn(`Access denied for ${collectionName}. Check Firestore Rules.`);
-                    else console.error("Error fetching " + collectionName, err);
+                    console.error("Error fetching " + collectionName, err);
                     setError(err);
                     setLoading(false);
                 });
                 return () => unsubscribe();
-            }, [collectionName, firebaseUser]);
+            }, [collectionName, firebaseAuthUser]);
 
-            const add = async (item) => { if (!firebaseUser) return; try { await db.collection(collectionName).add(item); } catch(e) { console.error(e); throw e; } };
-            const update = async (id, item) => { if (!firebaseUser) return; try { const { id: _, ...data } = item; await db.collection(collectionName).doc(id).update(data); } catch(e) { console.error(e); throw e; } };
-            const remove = async (id) => { if (!firebaseUser) return; try { await db.collection(collectionName).doc(id).delete(); } catch(e) { console.error(e); throw e; } };
-            const setDoc = async (id, item) => { if (!firebaseUser) return; try { await db.collection(collectionName).doc(id).set(item); } catch(e) { console.error(e); throw e; } };
+            // Helper to get the correct collection reference
+            const getRef = () => db.collection('artifacts').doc(appId).collection('public').doc('data').collection(collectionName);
+
+            const add = async (item) => { 
+                try { await getRef().add(item); } catch(e) { console.error(e); throw e; } 
+            };
+            const update = async (id, item) => { 
+                try { const { id: _, ...data } = item; await getRef().doc(id).update(data); } catch(e) { console.error(e); throw e; } 
+            };
+            const remove = async (id) => { 
+                try { await getRef().doc(id).delete(); } catch(e) { console.error(e); throw e; } 
+            };
+            const setDoc = async (id, item) => { 
+                try { await getRef().doc(id).set(item); } catch(e) { console.error(e); throw e; } 
+            };
 
             return { data, loading, error, add, update, remove, setDoc };
         };
@@ -383,15 +387,16 @@
             return (
                 <div className="min-h-screen flex items-center justify-center bg-gray-100">
                     <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
-                        <div className="text-center mb-8"><img src="icon-512.png" alt="Logo" className="w-20 h-20 mx-auto mb-4 object-contain" /><h2 className="text-2xl font-bold text-gray-800">Elect Word Ministry</h2><p className="text-gray-500">Sign in to your account</p></div>
+                        <div className="text-center mb-8"><div className="w-20 h-20 mx-auto mb-4 bg-indigo-600 rounded-full flex items-center justify-center text-white text-4xl"><i className="fas fa-church"></i></div><h2 className="text-2xl font-bold text-gray-800">Elect Word Ministry</h2><p className="text-gray-500">Sign in to your account</p></div>
                         {loading ? <p className="text-center text-indigo-600 font-bold animate-pulse">Loading System Data...</p> : (
                             <form onSubmit={handleSubmit}>
                                 {error && <div className="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm">{error}</div>}
-                                <div className="mb-4"><label className="block text-gray-700 text-sm font-bold mb-2">Username</label><input className="w-full p-3 border rounded" value={username} onChange={e => setUsername(e.target.value)} placeholder="Enter username" /></div>
-                                <div className="mb-6 relative"><label className="block text-gray-700 text-sm font-bold mb-2">Password</label><input className="w-full p-3 border rounded" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-9 text-gray-500 hover:text-indigo-600 focus:outline-none"><i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i></button></div>
+                                <div className="mb-4"><label className="block text-gray-700 text-sm font-bold mb-2">Username</label><input className="w-full p-3 border rounded" value={username} onChange={e => setUsername(e.target.value)} placeholder="Enter username (try 'admin')" /></div>
+                                <div className="mb-6 relative"><label className="block text-gray-700 text-sm font-bold mb-2">Password</label><input className="w-full p-3 border rounded" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password (try 'password123')" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-9 text-gray-500 hover:text-indigo-600 focus:outline-none"><i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i></button></div>
                                 <button className="w-full bg-indigo-600 text-white p-3 rounded hover:bg-indigo-700 font-bold transition">Sign In</button>
                             </form>
                         )}
+                        <p className="text-xs text-gray-400 mt-4 text-center">Default: admin / password123</p>
                     </div>
                 </div>
             );
@@ -762,24 +767,46 @@
             const [showProfileEdit, setShowProfileEdit] = useState(false);
             const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+            // -- Firebase Auth Logic for Backend Access --
+            // This is separate from the app's internal user login system.
+            // We need this to be able to read/write to the database.
+            const [firebaseUser, setFirebaseUser] = useState(null);
+
+            useEffect(() => {
+                const initAuth = async () => {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await auth.signInWithCustomToken(__initial_auth_token);
+                    } else {
+                        await auth.signInAnonymously();
+                    }
+                };
+                initAuth();
+                const unsubscribe = auth.onAuthStateChanged(u => {
+                    setFirebaseUser(u);
+                });
+                return () => unsubscribe();
+            }, []);
+
             // -- Load Collections from Firestore --
-            const usersDB = useFirestore('users');
-            const membersDB = useFirestore('members');
-            const financesDB = useFirestore('finances');
-            const projectsDB = useFirestore('projects');
-            const eventsDB = useFirestore('events');
-            const prayersDB = useFirestore('prayers');
-            const infoDB = useFirestore('info');
-            const announcementsDB = useFirestore('announcements');
+            // Only start loading when we have database access (firebaseUser)
+            const usersDB = useFirestore('users', firebaseUser);
+            const membersDB = useFirestore('members', firebaseUser);
+            const financesDB = useFirestore('finances', firebaseUser);
+            const projectsDB = useFirestore('projects', firebaseUser);
+            const eventsDB = useFirestore('events', firebaseUser);
+            const prayersDB = useFirestore('prayers', firebaseUser);
+            const infoDB = useFirestore('info', firebaseUser);
+            const announcementsDB = useFirestore('announcements', firebaseUser);
 
             // Initialize Admin if empty AND no error (prevents crash on permission denied)
             useEffect(() => {
-                if (!usersDB.loading && !usersDB.error && usersDB.data.length === 0) {
+                if (firebaseUser && !usersDB.loading && !usersDB.error && usersDB.data.length === 0) {
+                    // Create default admin if system is empty
                     usersDB.add(INITIAL_ADMIN).catch(e => {
-                        console.log("Auto-create Admin skipped due to permissions/error:", e.code);
+                        console.log("Auto-create Admin skipped or failed:", e);
                     });
                 }
-            }, [usersDB.loading, usersDB.data, usersDB.error]);
+            }, [usersDB.loading, usersDB.data, usersDB.error, firebaseUser]);
 
             // Persist Session
             useEffect(() => {
@@ -788,18 +815,25 @@
             }, []);
 
             const checkProfileCompletion = (userData) => {
+                // If member database isn't loaded yet, we skip this check for now
+                if (membersDB.loading) return;
+                
                 const member = membersDB.data.find(m => m.name === userData.name);
                 if (!member || !member.address || !member.phone) setShowProfileSetup(true);
             };
+            
             const handleLogin = (userData) => {
                 setUser(userData);
                 sessionStorage.setItem('cm_current_user', JSON.stringify(userData));
                 checkProfileCompletion(userData);
-                // Everyone lands on dashboard
                 setView('dashboard');
             };
+            
             const handleLogout = () => { setUser(null); sessionStorage.removeItem('cm_current_user'); setView('dashboard'); setIsMobileMenuOpen(false); };
             
+            // Show loading if firebase auth is initializing
+            if (!firebaseUser) return <div className="loading-overlay"><i className="fas fa-circle-notch fa-spin text-4xl text-indigo-600 mb-2"></i><p className="font-bold text-gray-700">Connecting to Database...</p></div>;
+
             if (!user) return <Login onLogin={handleLogin} users={usersDB.data} loading={usersDB.loading} />;
             
             const NavItem = ({ id, icon, label, allowedRoles }) => {
@@ -826,9 +860,9 @@
                     {anyError && (
                         <div className="fixed inset-0 flex items-center justify-center bg-gray-50 z-[2000] p-4">
                             <div className="bg-white p-8 rounded-lg shadow-2xl max-w-lg text-center border-l-4 border-red-500 overflow-y-auto max-h-[90vh]">
-                                {/* ... Error handling UI ... */}
                                 <h2 className="text-2xl font-bold text-gray-800 mb-2">Connection Issue</h2>
                                 <p className="text-xs text-red-400">{anyError.message}</p>
+                                <button onClick={() => window.location.reload()} className="mt-4 bg-gray-800 text-white px-4 py-2 rounded">Retry</button>
                             </div>
                         </div>
                     )}
@@ -837,14 +871,13 @@
                     {showProfileEdit && <ProfileEditor user={user} usersDB={usersDB} membersDB={membersDB} onClose={() => setShowProfileEdit(false)} onUpdateUser={setUser} />}
                     
                     {/* Sidebar / Mobile Drawer */}
-                    {/* Overlay Background for Mobile */}
                     {isMobileMenuOpen && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden" onClick={() => setIsMobileMenuOpen(false)}></div>
                     )}
 
                     <div className={`fixed inset-y-0 left-0 transform ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"} md:relative md:translate-x-0 transition duration-200 ease-in-out z-30 w-64 bg-white shadow-xl flex flex-col`}>
                         <div className="p-6 border-b flex items-center space-x-3">
-                            <img src="icon-512.png" alt="Logo" className="w-10 h-10 rounded flex-shrink-0 object-contain" />
+                            <div className="w-10 h-10 rounded bg-indigo-600 flex items-center justify-center text-white text-xl"><i className="fas fa-church"></i></div>
                             <div><h1 className="font-bold text-sm text-gray-800 leading-tight">Elect Word Ministry</h1><p className="text-xs text-gray-500 font-medium">Community Church</p></div>
                         </div>
                         <nav className="flex-1 p-4 overflow-y-auto">
