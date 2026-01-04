@@ -1527,6 +1527,59 @@
             // We need this to be able to read/write to the database.
             const [firebaseUser, setFirebaseUser] = useState(null);
 
+            // --- SMART NAVIGATION LOGIC START ---
+            // 1. Initialize History & Listen for Back Button
+            useEffect(() => {
+                if (user) {
+                    // Set initial history state to dashboard
+                    window.history.replaceState({ view: 'dashboard' }, '');
+                }
+
+                const handlePopState = (event) => {
+                    // If state exists (we pushed it), use it. Otherwise default to dashboard.
+                    if (event.state && event.state.view) {
+                        setView(event.state.view);
+                    } else {
+                        setView('dashboard');
+                    }
+                };
+
+                window.addEventListener('popstate', handlePopState);
+                return () => window.removeEventListener('popstate', handlePopState);
+            }, [user]);
+
+            // 2. Custom Navigation Function (Replaces setView)
+            const handleNavigation = (targetView) => {
+                if (targetView === view) {
+                    setIsMobileMenuOpen(false);
+                    return;
+                }
+
+                if (targetView === 'dashboard') {
+                    // If navigating TO dashboard manually:
+                    // We just update the view. If the user presses Back later, 
+                    // the history stack handles the "Exit" or "Stay" logic naturally.
+                    // This prevents creating a loop where Back -> Dashboard -> Back -> Dashboard.
+                    setView('dashboard');
+                } else {
+                    // If navigating TO a sub-page:
+                    if (view === 'dashboard') {
+                        // Coming FROM Dashboard: Push new state (creates a history entry)
+                        // This ensures pressing Back works.
+                        window.history.pushState({ view: targetView }, '');
+                    } else {
+                        // Coming FROM another sub-page: Replace state
+                        // This ensures Back goes to Dashboard, not the previous sub-page.
+                        // Keeps navigation stack shallow (Dashboard -> Current Page).
+                        window.history.replaceState({ view: targetView }, '');
+                    }
+                    setView(targetView);
+                }
+                
+                setIsMobileMenuOpen(false);
+            };
+            // --- SMART NAVIGATION LOGIC END ---
+
             useEffect(() => {
                 const initAuth = async () => {
                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -1553,7 +1606,6 @@
             }, []);
 
             // -- Load Collections from Firestore --
-            // Only start loading when we have database access (firebaseUser)
             const usersDB = useFirestore('users', firebaseUser);
             const membersDB = useFirestore('members', firebaseUser);
             const financesDB = useFirestore('finances', firebaseUser);
@@ -1566,7 +1618,6 @@
             // Initialize Admin if empty AND no error (prevents crash on permission denied)
             useEffect(() => {
                 if (firebaseUser && !usersDB.loading && !usersDB.error && usersDB.data.length === 0) {
-                    // Create default admin if system is empty
                     usersDB.add(INITIAL_ADMIN).catch(e => {
                         console.log("Auto-create Admin skipped or failed:", e);
                     });
@@ -1580,9 +1631,7 @@
             }, []);
 
             const checkProfileCompletion = (userData) => {
-                // If member database isn't loaded yet, we skip this check for now
                 if (membersDB.loading) return;
-                
                 const member = membersDB.data.find(m => m.name === userData.name);
                 if (!member || !member.address || !member.phone) setShowProfileSetup(true);
             };
@@ -1591,7 +1640,10 @@
                 setUser(userData);
                 sessionStorage.setItem('cm_current_user', JSON.stringify(userData));
                 checkProfileCompletion(userData);
+                
+                // Reset to dashboard on login
                 setView('dashboard');
+                window.history.replaceState({ view: 'dashboard' }, '');
             };
             
             const confirmLogout = () => {
@@ -1604,6 +1656,8 @@
                 setView('dashboard'); 
                 setIsMobileMenuOpen(false); 
                 setLogoutConfirmOpen(false);
+                // Clear history state on logout
+                window.history.replaceState(null, '');
             };
             
             // Show loading if firebase auth is initializing
@@ -1615,7 +1669,7 @@
                 if (allowedRoles && !allowedRoles.includes(user.role)) return null;
                 return (
                     <button 
-                        onClick={() => { setView(id); setIsMobileMenuOpen(false); }} 
+                        onClick={() => handleNavigation(id)} 
                         className={`sidebar-link w-full text-left p-3 rounded mb-1 flex items-center transition ${view === id ? 'active' : 'text-gray-600'}`}
                     >
                         <i className={`fas ${icon} w-8 text-center`}></i>
@@ -1703,7 +1757,7 @@
 
                     {/* Main Content Area */}
                     <div className="flex-1 overflow-auto pt-20 md:pt-0 pb-20 md:pb-0 h-full w-full main-content safe-pb">
-                        {view === 'dashboard' && <Dashboard changeView={setView} members={membersDB.data} finances={financesDB.data} prayers={prayersDB.data} infoDB={infoDB} events={eventsDB.data} announcementsDB={announcementsDB} user={user} />}
+                        {view === 'dashboard' && <Dashboard changeView={handleNavigation} members={membersDB.data} finances={financesDB.data} prayers={prayersDB.data} infoDB={infoDB} events={eventsDB.data} announcementsDB={announcementsDB} user={user} />}
                         {view === 'finances' && <Financials user={user} financesDB={financesDB} projectsDB={projectsDB} />}
                         {view === 'members' && <Members user={user} membersDB={membersDB} />}
                         {view === 'prayers' && <PrayerWall user={user} prayersDB={prayersDB} />}
