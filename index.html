@@ -23,8 +23,8 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
-    <!-- Babel -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Babel (Pinned to stable version 7) -->
+    <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
 
     <!-- html2pdf.js for PDF Generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -80,6 +80,7 @@
     <div id="root"></div>
 
     <script type="module">
+        // Firebase Module Loading
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -89,6 +90,9 @@
             initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
             getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, setDoc, onSnapshot
         };
+        
+        // Let the React code know that the asynchronous modules have finished loading
+        window.dispatchEvent(new Event('firebaseLoaded'));
     </script>
 
     <!-- Register Service Worker -->
@@ -103,25 +107,33 @@
     </script>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo, useRef } = React;
-        const { 
-            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
-            getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, setDoc, onSnapshot 
-        } = window.firebaseModules;
+        const startApp = () => {
+            try {
+                const { useState, useEffect, useMemo, useRef } = React;
+                const { 
+                    initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+                    getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, setDoc, onSnapshot 
+                } = window.firebaseModules;
 
+                // --- FIREBASE CONFIGURATION ---
         // --- FIREBASE CONFIGURATION ---
-        // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-        const firebaseConfig = typeof __firebase_config !== 'undefined' 
-            ? JSON.parse(__firebase_config) 
-            : {
-                apiKey: "AIzaSyAmRPkVwjnxYaSSkB6H1eOqQ_7sdeKkIxA",
-                authDomain: "ewmapp-7c52f.firebaseapp.com",
-                projectId: "ewmapp-7c52f",
-                storageBucket: "ewmapp-7c52f.firebasestorage.app",
-                messagingSenderId: "625697835140",
-                appId: "1:625697835140:web:e2814504a25fdaefce1ad1",
-                measurementId: "G-JQ6XX31018"
-            };
+        let firebaseConfig = {
+            apiKey: "AIzaSyAmRPkVwjnxYaSSkB6H1eOqQ_7sdeKkIxA",
+            authDomain: "ewmapp-7c52f.firebaseapp.com",
+            projectId: "ewmapp-7c52f",
+            storageBucket: "ewmapp-7c52f.firebasestorage.app",
+            messagingSenderId: "625697835140",
+            appId: "1:625697835140:web:e2814504a25fdaefce1ad1",
+            measurementId: "G-JQ6XX31018"
+        };
+        
+        try {
+            if (typeof __firebase_config !== 'undefined') {
+                firebaseConfig = JSON.parse(__firebase_config);
+            }
+        } catch(e) {
+            console.error("Failed to parse __firebase_config", e);
+        }
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -151,7 +163,6 @@
             'Pledges': { leaders: ['Church Treasurer'], viewers: ["Pastor", "Deacon", "Elder"] }
         };
 
-        // UPDATED: Changed default password to something less "breached" to avoid Chrome warnings
         const INITIAL_ADMIN = { 
             username: 'admin', password: 'admin123!', role: 'admin', name: 'Senior Pastor', 
             authorizedDepartments: DEPARTMENTS, positions: ['Pastor'] 
@@ -208,7 +219,6 @@
                 return () => unsubscribe();
             }, [collectionName, firebaseAuthUser]);
 
-            // Helper to get the correct collection reference
             const getRef = () => collection(db, 'artifacts', appId, 'public', 'data', collectionName);
 
             const add = async (item) => { 
@@ -276,7 +286,7 @@
             const generateReport = () => {
                 const now = new Date();
                 let startDate = new Date();
-                let endDate = new Date(); // Default end is now
+                let endDate = new Date();
 
                 if (config.period === 'Weekly') {
                     startDate.setDate(now.getDate() - 7);
@@ -285,7 +295,7 @@
                 } else if (config.period === 'Yearly') {
                     startDate = new Date(now.getFullYear(), 0, 1);
                 } else if (config.period === 'All Time') {
-                    startDate = new Date(0); // Start from Epoch
+                    startDate = new Date(0); 
                 } else if (config.period === 'Custom') {
                     if (!config.customStart || !config.customEnd) {
                         alert("Please select both a start date and an end date.");
@@ -293,17 +303,13 @@
                     }
                     startDate = new Date(config.customStart);
                     endDate = new Date(config.customEnd);
-                    // Set end date to end of that day
                     endDate.setHours(23, 59, 59, 999);
                 }
                 
-                // Ensure startDate is set to beginning of the day for calculation logic
                 startDate.setHours(0,0,0,0);
 
-                // --- LOGIC: Calculate OPENING BALANCE (Previous Periods) ---
                 const previousTransactions = (financesDB.data || []).filter(t => {
                     const tDate = new Date(t.date);
-                    // Strict inequality (< startDate) gets everything BEFORE the report starts
                     return t.department === config.department && tDate < startDate;
                 });
 
@@ -312,7 +318,6 @@
                     return t.type === 'income' ? acc + amount : acc - amount;
                 }, 0);
 
-                // --- LOGIC: Current Period Transactions ---
                 const finances = (financesDB.data || []).filter(t => { 
                     const tDate = new Date(t.date); 
                     return t.department === config.department && tDate >= startDate && tDate <= endDate; 
@@ -323,12 +328,8 @@
                 setReportData({ 
                     finances, 
                     projects, 
-                    openingBalance, // Added opening balance
-                    meta: { 
-                        ...config, 
-                        startDate, 
-                        endDate 
-                    } 
+                    openingBalance,
+                    meta: { ...config, startDate, endDate } 
                 });
             };
 
@@ -344,7 +345,6 @@
                     jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
                 };
                 
-                // Show loading or feedback if needed
                 html2pdf().set(opt).from(element).save();
             };
 
@@ -395,9 +395,7 @@
                                 <button onClick={downloadPDF} className="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 font-bold flex items-center"><i className="fas fa-file-pdf mr-2"></i> Download PDF</button>
                             </div>
 
-                            {/* ID for html2pdf targeting */}
                             <div id="report-content" className="p-4 bg-white">
-                                {/* Report Header with Logo and Church Name */}
                                 <div className="flex items-center border-b-2 border-indigo-600 pb-4 mb-6">
                                     <img src="icon-512.png" alt="Logo" className="w-16 h-16 rounded-lg mr-4 object-cover" />
                                     <div>
@@ -418,7 +416,6 @@
                                     <div className="mb-8">
                                         <h3 className="text-lg font-bold text-gray-700 mb-3 uppercase tracking-wide">Financial Statement</h3>
                                         
-                                        {/* Financial Summary Cards */}
                                         <div className="grid grid-cols-4 gap-4 mb-6 text-center">
                                             <div className="bg-gray-50 p-3 rounded border border-gray-200">
                                                 <span className="block text-[10px] font-bold text-gray-500 uppercase">Opening Balance</span>
@@ -454,22 +451,12 @@
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {/* Opening Balance Row */}
                                                 <tr className="bg-blue-50 font-bold text-blue-800">
                                                     <td className="p-2 border" colSpan="3">PREVIOUS BALANCE / CARRY OVER</td>
                                                     <td className="p-2 border text-right">{formatCurrency(reportData.openingBalance)}</td>
                                                 </tr>
 
-                                                {/* Transactions */}
                                                 {reportData.finances.map((t, index) => {
-                                                    // Calculate running balance locally for display
-                                                    // Note: Ideally sorting should be consistent (Date ASC)
-                                                    // We'll calculate strictly for display based on array order
-                                                    
-                                                    // To calculate running balance correctly in a map, we need to sum previous items in the array + opening
-                                                    // This is inefficient in O(N^2), but fine for report sizes. 
-                                                    // Let's do a pre-calc reduce if needed, but for simple display:
-                                                    
                                                     let runningBal = reportData.openingBalance;
                                                     for(let i=0; i<=index; i++) {
                                                         const item = reportData.finances[i];
@@ -643,7 +630,6 @@
 
             useEffect(() => { const doc = infoDB.data.find(d => d.id === 'main'); if (doc) setLocalInfo(doc); }, [infoDB.data]);
 
-            // UPDATED VERSE LOGIC: Deterministic Daily Verse - CHANGED TO KJV
             const verse = useMemo(() => {
                 const VERSES = [
                     { text: "For I know the thoughts that I think toward you, saith the LORD, thoughts of peace, and not of evil, to give you an expected end.", ref: "Jeremiah 29:11 (KJV)" },
@@ -709,7 +695,6 @@
                     <ConfirmModal isOpen={confirm.isOpen} message={confirm.msg} onConfirm={() => { confirm.action(); setConfirm({ isOpen: false, msg: '', action: null }); }} onCancel={() => setConfirm({ isOpen: false, msg: '', action: null })} />
                     <h2 className="text-2xl font-bold mb-6 text-gray-800">Dashboard Overview</h2>
                     
-                    {/* Countdown Banner */}
                     {countdown && (
                         <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-lg shadow-lg p-6 mb-8 text-white flex flex-col md:flex-row items-center justify-between">
                             <div>
@@ -745,7 +730,6 @@
                         </div>
                     </div>
                     
-                    {/* Announcements Section */}
                     <div className="mb-8">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-xl font-bold text-gray-800">Latest Announcements</h3>
@@ -796,7 +780,6 @@
                         </div>
                     </div>
 
-                    {/* Announcement Modal */}
                     {showAnnounceModal && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                             <div className="bg-white p-6 rounded-lg w-full max-w-lg">
@@ -827,21 +810,17 @@
             const projects = projectsDB.data;
             const accessibleFunds = useMemo(() => DEPARTMENTS.filter(dept => getPermissions(user, dept).view), [user]);
             
-            // State for the active tab (Fund) - Default to 'OVERVIEW'
             const [activeTab, setActiveTab] = useState('OVERVIEW');
-            
             const [form, setForm] = useState({ department: '', projectId: '', amount: '', type: 'income', description: '', date: new Date().toISOString().split('T')[0] });
             const [editingId, setEditingId] = useState(null);
             const [confirm, setConfirm] = useState({ isOpen: false, msg: '', action: null });
 
-            // Set initial tab if needed (though default state handles 'OVERVIEW')
             useEffect(() => { 
                 if (accessibleFunds.length === 0) {
                     setActiveTab('');
                 }
             }, [accessibleFunds]);
 
-            // When tab changes to a specific fund, prepare the form. If Overview, clear editing.
             useEffect(() => {
                 if (activeTab && activeTab !== 'OVERVIEW') {
                     setForm(prev => ({ ...prev, department: activeTab, projectId: '' }));
@@ -891,7 +870,6 @@
                 return inc - exp; 
             };
 
-            // --- Global Stats Calculation for Overview ---
             const globalStats = useMemo(() => {
                 const relevantTrans = transactions.filter(t => accessibleFunds.includes(t.department));
                 const income = relevantTrans.filter(t => t.type === 'income').reduce((a, c) => a + parseFloat(c.amount || 0), 0);
@@ -899,7 +877,6 @@
                 return { income, expense, balance: income - expense };
             }, [transactions, accessibleFunds]);
 
-            // Filter data for the CURRENT ACTIVE TAB (if not overview)
             const visibleTransactions = transactions.filter(t => t.department === activeTab).sort((a,b) => new Date(b.date) - new Date(a.date));
             const availableProjects = projects.filter(p => p.department === activeTab && p.status !== 'Completed');
             const canManageCurrentFund = activeTab !== 'OVERVIEW' && getPermissions(user, activeTab).manage;
@@ -915,7 +892,6 @@
                         <h2 className="text-2xl font-bold text-gray-800">Financial Tracker</h2>
                     </div>
 
-                    {/* TABS NAVIGATION */}
                     <div className="flex overflow-x-auto space-x-1 mb-6 border-b border-gray-200 pb-1">
                         <button 
                             onClick={() => setActiveTab('OVERVIEW')}
@@ -934,11 +910,9 @@
                         ))}
                     </div>
 
-                    {/* CONTENT AREA */}
                     <div className="animate-fade-in">
                         {activeTab === 'OVERVIEW' ? (
                             <div className="space-y-8">
-                                {/* 1. Global Stats Cards */}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                     <div className="bg-white p-6 rounded-lg shadow border-l-4 border-indigo-600">
                                         <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Total Net Balance</p>
@@ -957,7 +931,6 @@
                                     </div>
                                 </div>
 
-                                {/* 2. Fund Breakdown */}
                                 <div>
                                     <h3 className="text-lg font-bold text-gray-700 mb-4 border-b pb-2">Fund Breakdown</h3>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -976,7 +949,6 @@
                                     </div>
                                 </div>
 
-                                {/* 3. Recent Global Activity */}
                                 <div>
                                     <h3 className="text-lg font-bold text-gray-700 mb-4 border-b pb-2">Recent Activity (All Funds)</h3>
                                     <div className="bg-white rounded-lg shadow overflow-x-auto">
@@ -1011,9 +983,7 @@
                                 </div>
                             </div>
                         ) : (
-                            // --- INDIVIDUAL FUND VIEW ---
                             <div className="animate-fade-in">
-                                {/* Summary Card for Active Tab */}
                                 <div className="bg-white p-6 rounded-lg shadow border-l-4 border-indigo-500 mb-6 flex justify-between items-center">
                                     <div>
                                         <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide">{activeTab} Balance</h3>
@@ -1027,7 +997,6 @@
                                 </div>
 
                                 <div className="flex flex-col lg:flex-row gap-6">
-                                    {/* Transaction Form (Only if manageable) */}
                                     {canManageCurrentFund ? (
                                         <div className="lg:w-1/3 bg-white p-6 rounded-lg shadow h-fit">
                                             <div className="flex justify-between items-center mb-4">
@@ -1080,7 +1049,6 @@
                                         </div>
                                     )}
 
-                                    {/* Transactions Table */}
                                     <div className="lg:w-2/3 bg-white rounded-lg shadow overflow-x-auto flex-1">
                                         <table className="w-full text-left border-collapse min-w-[600px]">
                                             <thead className="bg-gray-50">
@@ -1352,7 +1320,13 @@
         };
 
         const ChurchInfo = ({ user, infoDB }) => { 
-             const [info, setInfo] = useState(JSON.parse(localStorage.getItem('cm_info') || JSON.stringify(INITIAL_INFO)));
+             const [info, setInfo] = useState(() => {
+                 try {
+                     return JSON.parse(localStorage.getItem('cm_info')) || INITIAL_INFO;
+                 } catch (e) {
+                     return INITIAL_INFO;
+                 }
+             });
             const [activeTab, setActiveTab] = useState('about');
             const [isEditing, setIsEditing] = useState(false);
             const [localInfo, setLocalInfo] = useState(INITIAL_INFO);
@@ -1371,7 +1345,6 @@
                     case 'location': return <div className="space-y-4"><div><label className="block text-xs font-bold text-gray-500">Address</label>{isEditing ? <input className="w-full border p-2 rounded" value={localInfo.address} onChange={e => setLocalInfo({...localInfo, address: e.target.value})} /> : <p>{localInfo.address}</p>}</div><div className="h-64 bg-gray-200 rounded overflow-hidden shadow-inner relative"><iframe width="100%" height="100%" frameBorder="0" style={{border:0}} src={`https://maps.google.com/maps?q=${encodeURIComponent(localInfo.address)}&t=&z=15&ie=UTF8&iwloc=&output=embed`} allowFullScreen></iframe></div><a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(localInfo.address)}`} target="_blank" className="block w-full text-center bg-blue-600 text-white py-2 rounded hover:bg-blue-700 font-bold transition"><i className="fas fa-directions mr-2"></i> Get Directions</a></div>;
                     case 'social': return (
                         <div className="space-y-6">
-                            {/* Facebook */}
                             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg shadow-sm">
                                 <div className="flex items-center">
                                     <i className="fab fa-facebook text-blue-600 text-4xl mr-4"></i>
@@ -1384,7 +1357,6 @@
                                 }
                             </div>
                             
-                            {/* YouTube */}
                             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg shadow-sm">
                                 <div className="flex items-center">
                                     <i className="fab fa-youtube text-red-600 text-4xl mr-4"></i>
@@ -1397,7 +1369,6 @@
                                 }
                             </div>
 
-                            {/* Instagram */}
                             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg shadow-sm">
                                 <div className="flex items-center">
                                     <i className="fab fa-instagram text-pink-600 text-4xl mr-4"></i>
@@ -1439,7 +1410,6 @@
                 e.preventDefault(); 
                 setErrorMsg(''); 
                 
-                // Check for duplicate username (excluding current user if editing)
                 const duplicateUser = users.find(u => u.username === newUser.username && u.id !== editingUserId);
                 if (duplicateUser) { 
                     setErrorMsg('Username already exists'); 
@@ -1447,10 +1417,6 @@
                 } 
 
                 if (editingUserId) {
-                    // --- STRICT UPDATE PATH ---
-                    // This block ONLY runs if we are editing an existing user
-                    
-                    // Capture original user to find the linked member record (since name might change)
                     const originalUser = users.find(u => u.id === editingUserId);
 
                     setConfirm({ 
@@ -1459,21 +1425,16 @@
                         action: () => { 
                             usersDB.update(editingUserId, newUser)
                                 .then(() => {
-                                    // --- SYNC LOGIC: Update corresponding Member/Congregation Record ---
                                     if (originalUser) {
-                                        // Find the member record associated with the OLD name
-                                        // We use the old name because the 'name' field in 'newUser' might be different now
                                         const linkedMember = members.find(m => m.name === originalUser.name);
                                         
                                         if (linkedMember) {
-                                            // Update existing member
                                             membersDB.update(linkedMember.id, {
                                                 ...linkedMember,
-                                                name: newUser.name,     // Sync name change
-                                                roles: newUser.positions // Sync updated roles
+                                                name: newUser.name,     
+                                                roles: newUser.positions 
                                             });
                                         } else {
-                                            // Fallback: If they were not in the directory for some reason, add them now
                                             membersDB.add({ 
                                                 name: newUser.name, 
                                                 roles: newUser.positions, 
@@ -1490,15 +1451,12 @@
                         }
                     }); 
                 } else {
-                    // --- STRICT CREATE PATH ---
-                    // This block ONLY runs if we are creating a new user (no editingUserId)
                     setConfirm({ 
                         isOpen: true, 
                         msg: `Create new account for ${newUser.name}?`, 
                         action: () => { 
                             usersDB.add(newUser)
                                 .then(() => {
-                                    // Sync: Create a corresponding member record if one doesn't exist
                                     const existingMember = members.find(m => m.name === newUser.name); 
                                     if (!existingMember) { 
                                         membersDB.add({ name: newUser.name, roles: newUser.positions, status: 'Active', email: '', phone: '', address: '' }); 
@@ -1520,23 +1478,16 @@
             const [showProfileSetup, setShowProfileSetup] = useState(false);
             const [showProfileEdit, setShowProfileEdit] = useState(false);
             const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-            const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false); // New state for logout confirmation
+            const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false); 
 
-            // -- Firebase Auth Logic for Backend Access --
-            // This is separate from the app's internal user login system.
-            // We need this to be able to read/write to the database.
             const [firebaseUser, setFirebaseUser] = useState(null);
 
-            // --- SMART NAVIGATION LOGIC START ---
-            // 1. Initialize History & Listen for Back Button
             useEffect(() => {
                 if (user) {
-                    // Set initial history state to dashboard
                     window.history.replaceState({ view: 'dashboard' }, '');
                 }
 
                 const handlePopState = (event) => {
-                    // If state exists (we pushed it), use it. Otherwise default to dashboard.
                     if (event.state && event.state.view) {
                         setView(event.state.view);
                     } else {
@@ -1548,7 +1499,6 @@
                 return () => window.removeEventListener('popstate', handlePopState);
             }, [user]);
 
-            // 2. Custom Navigation Function (Replaces setView)
             const handleNavigation = (targetView) => {
                 if (targetView === view) {
                     setIsMobileMenuOpen(false);
@@ -1556,21 +1506,11 @@
                 }
 
                 if (targetView === 'dashboard') {
-                    // If navigating TO dashboard manually:
-                    // We just update the view. If the user presses Back later, 
-                    // the history stack handles the "Exit" or "Stay" logic naturally.
-                    // This prevents creating a loop where Back -> Dashboard -> Back -> Dashboard.
                     setView('dashboard');
                 } else {
-                    // If navigating TO a sub-page:
                     if (view === 'dashboard') {
-                        // Coming FROM Dashboard: Push new state (creates a history entry)
-                        // This ensures pressing Back works.
                         window.history.pushState({ view: targetView }, '');
                     } else {
-                        // Coming FROM another sub-page: Replace state
-                        // This ensures Back goes to Dashboard, not the previous sub-page.
-                        // Keeps navigation stack shallow (Dashboard -> Current Page).
                         window.history.replaceState({ view: targetView }, '');
                     }
                     setView(targetView);
@@ -1578,7 +1518,6 @@
                 
                 setIsMobileMenuOpen(false);
             };
-            // --- SMART NAVIGATION LOGIC END ---
 
             useEffect(() => {
                 const initAuth = async () => {
@@ -1595,17 +1534,15 @@
                 return () => unsubscribe();
             }, []);
 
-            // Window Close/Refresh Warning
             useEffect(() => {
                 const handleBeforeUnload = (e) => {
                     e.preventDefault();
-                    e.returnValue = ''; // Required for Chrome to show default warning
+                    e.returnValue = ''; 
                 };
                 window.addEventListener('beforeunload', handleBeforeUnload);
                 return () => window.removeEventListener('beforeunload', handleBeforeUnload);
             }, []);
 
-            // -- Load Collections from Firestore --
             const usersDB = useFirestore('users', firebaseUser);
             const membersDB = useFirestore('members', firebaseUser);
             const financesDB = useFirestore('finances', firebaseUser);
@@ -1615,7 +1552,6 @@
             const infoDB = useFirestore('info', firebaseUser);
             const announcementsDB = useFirestore('announcements', firebaseUser);
 
-            // Initialize Admin if empty AND no error (prevents crash on permission denied)
             useEffect(() => {
                 if (firebaseUser && !usersDB.loading && !usersDB.error && usersDB.data.length === 0) {
                     usersDB.add(INITIAL_ADMIN).catch(e => {
@@ -1624,10 +1560,15 @@
                 }
             }, [usersDB.loading, usersDB.data, usersDB.error, firebaseUser]);
 
-            // Persist Session
             useEffect(() => {
                 const savedUser = sessionStorage.getItem('cm_current_user');
-                if (savedUser) setUser(JSON.parse(savedUser));
+                if (savedUser) {
+                    try {
+                        setUser(JSON.parse(savedUser));
+                    } catch (e) {
+                        console.error("Corrupted session user detected", e);
+                    }
+                }
             }, []);
 
             const checkProfileCompletion = (userData) => {
@@ -1641,7 +1582,6 @@
                 sessionStorage.setItem('cm_current_user', JSON.stringify(userData));
                 checkProfileCompletion(userData);
                 
-                // Reset to dashboard on login
                 setView('dashboard');
                 window.history.replaceState({ view: 'dashboard' }, '');
             };
@@ -1656,11 +1596,9 @@
                 setView('dashboard'); 
                 setIsMobileMenuOpen(false); 
                 setLogoutConfirmOpen(false);
-                // Clear history state on logout
                 window.history.replaceState(null, '');
             };
             
-            // Show loading if firebase auth is initializing
             if (!firebaseUser) return <div className="loading-overlay"><i className="fas fa-circle-notch fa-spin text-4xl text-indigo-600 mb-2"></i><p className="font-bold text-gray-700">Connecting to Database...</p></div>;
 
             if (!user) return <Login onLogin={handleLogin} users={usersDB.data} loading={usersDB.loading} />;
@@ -1678,13 +1616,11 @@
                 );
             };
             
-            // Aggregated loading/error state
             const anyLoading = usersDB.loading || membersDB.loading || financesDB.loading || projectsDB.loading || eventsDB.loading || prayersDB.loading || infoDB.loading;
             const anyError = usersDB.error || membersDB.error || financesDB.error || projectsDB.error || eventsDB.error || prayersDB.error || infoDB.error;
 
             return (
                 <div className="flex h-screen overflow-hidden">
-                    {/* Logout Confirmation Modal */}
                     <ConfirmModal 
                         isOpen={logoutConfirmOpen} 
                         message="Are you sure you want to sign out?" 
@@ -1707,7 +1643,6 @@
                     {showProfileSetup && <ProfileSetup user={user} membersDB={membersDB} onComplete={() => setShowProfileSetup(false)} />}
                     {showProfileEdit && <ProfileEditor user={user} usersDB={usersDB} membersDB={membersDB} onClose={() => setShowProfileEdit(false)} onUpdateUser={setUser} />}
                     
-                    {/* Sidebar / Mobile Drawer */}
                     {isMobileMenuOpen && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden" onClick={() => setIsMobileMenuOpen(false)}></div>
                     )}
@@ -1741,7 +1676,6 @@
                         </div>
                     </div>
                     
-                    {/* Mobile Top Bar */}
                     <div className="md:hidden fixed top-0 w-full bg-white shadow z-20 p-4 flex justify-between items-center no-print">
                         <div className="flex items-center">
                             <button onClick={() => setIsMobileMenuOpen(true)} className="mr-4 text-gray-700 focus:outline-none">
@@ -1755,7 +1689,6 @@
                         <button onClick={confirmLogout} className="text-red-600"><i className="fas fa-sign-out-alt"></i></button>
                     </div>
 
-                    {/* Main Content Area */}
                     <div className="flex-1 overflow-auto pt-20 md:pt-0 pb-20 md:pb-0 h-full w-full main-content safe-pb">
                         {view === 'dashboard' && <Dashboard changeView={handleNavigation} members={membersDB.data} finances={financesDB.data} prayers={prayersDB.data} infoDB={infoDB} events={eventsDB.data} announcementsDB={announcementsDB} user={user} />}
                         {view === 'finances' && <Financials user={user} financesDB={financesDB} projectsDB={projectsDB} />}
@@ -1770,8 +1703,47 @@
                 </div>
             );
         };
+
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
+        
+            } catch (error) {
+                console.error("Critical Application Error:", error);
+                document.getElementById('root').innerHTML = `
+                    <div style="padding: 40px; text-align: center; color: #7f1d1d; font-family: sans-serif; background-color: #fef2f2; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                        <i class="fas fa-exclamation-triangle" style="font-size: 48px; margin-bottom: 16px; color: #ef4444;"></i>
+                        <h2 style="font-size: 24px; font-weight: bold; margin-bottom: 8px;">System Error</h2>
+                        <p style="margin-bottom: 16px; max-width: 400px; line-height: 1.5;">The application encountered an unexpected error while trying to load.</p>
+                        <div style="background: white; padding: 16px; border-radius: 8px; text-align: left; max-width: 90%; overflow-x: auto; font-family: monospace; font-size: 12px; border: 1px solid #fca5a5; color: #991b1b;">
+                            ${error.message}
+                        </div>
+                    </div>
+                `;
+            }
+        };
+
+        // Polling mechanism to safely wait for Firebase and React to load and eliminate race conditions
+        let loadAttempts = 0;
+        const checkDependencies = setInterval(() => {
+            if (window.firebaseModules && window.React && window.ReactDOM) {
+                clearInterval(checkDependencies);
+                startApp();
+            } else {
+                loadAttempts++;
+                // Wait up to 10 seconds (100 * 100ms) for external scripts to load
+                if (loadAttempts > 100) { 
+                    clearInterval(checkDependencies);
+                    document.getElementById('root').innerHTML = `
+                        <div style="padding: 40px; text-align: center; color: #7f1d1d; font-family: sans-serif; background-color: #fef2f2; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                            <i class="fas fa-wifi" style="font-size: 48px; margin-bottom: 16px; color: #ef4444;"></i>
+                            <h2 style="font-size: 24px; font-weight: bold; margin-bottom: 8px;">Connection Timeout</h2>
+                            <p style="max-width: 400px; line-height: 1.5;">Failed to load required system modules. Please check your internet connection or try disabling any ad-blockers.</p>
+                            <button onclick="window.location.reload()" style="margin-top: 20px; padding: 10px 24px; background: #ef4444; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 16px; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.2);">Refresh Page</button>
+                        </div>
+                    `;
+                }
+            }
+        }, 100);
     </script>
 </body>
 </html>
